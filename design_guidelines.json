@@ -1,0 +1,134 @@
+{
+  "project_title": "BekuMart - Frozen Food POS & ERP Management System",
+  "archetype": "ORGANIC & WARM MODERN (PERFORMANCE POS)",
+  "language_and_locale": {
+    "language": "Indonesian (id-ID)",
+    "currency_format": "Rupiah (Rp)",
+    "currency_example": "Rp 45.000",
+    "date_format": "DD MMM YYYY / HH:mm WIB"
+  },
+  "theme_strategy": {
+    "default_mode": "dark",
+    "toggleable": true,
+    "dark_theme": {
+      "bg_base": "#0B111E",
+      "bg_surface": "#131C2E",
+      "bg_surface_elevated": "#1A263D",
+      "border": "#21324E",
+      "text_primary": "#F1F5F9",
+      "text_secondary": "#94A3B8",
+      "accent_primary": "#FF6B35",
+      "accent_primary_hover": "#FF8555",
+      "accent_secondary": "#00C49F",
+      "accent_warning": "#FFB800",
+      "accent_danger": "#FF4D4D",
+      "card_shadow": "0 4px 20px -2px rgba(0, 0, 0, 0.4)"
+    },
+    "light_theme": {
+      "bg_base": "#F8FAFC",
+      "bg_surface": "#FFFFFF",
+      "bg_surface_elevated": "#F1F5F9",
+      "border": "#E2E8F0",
+      "text_primary": "#0F172A",
+      "text_secondary": "#64748B",
+      "accent_primary": "#E85D04",
+      "accent_primary_hover": "#DC2F02",
+      "accent_secondary": "#0D9488",
+      "accent_warning": "#D97706",
+      "accent_danger": "#DC2626",
+      "card_shadow": "0 2px 12px -1px rgba(15, 23, 42, 0.08)"
+    }
+  },
+  "typography": {
+    "font_family_heading": "Plus Jakarta Sans, Outfit, sans-serif",
+    "font_family_body": "Plus Jakarta Sans, sans-serif",
+    "font_family_mono": "JetBrains Mono, Source Code Pro, monospace",
+    "scale": {
+      "h1": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h2": "text-xl sm:text-2xl font-bold tracking-tight",
+      "h3": "text-lg sm:text-xl font-semibold",
+      "h4": "text-base font-semibold",
+      "body": "text-sm text-slate-300 leading-relaxed",
+      "body_sm": "text-xs text-slate-400",
+      "mono_price": "font-mono font-semibold tracking-tight"
+    }
+  },
+  "layout_and_navigation": {
+    "desktop": {
+      "sidebar_width": "w-64",
+      "sidebar_collapsed": "w-20",
+      "style": "Fixed left sidebar with sleek active states, sub-menu support, store quick-selector, and theme toggle at bottom."
+    },
+    "mobile": {
+      "nav_style": "Bottom navigation bar (5 quick items) + sliding sheet sidebar drawer for complete menu access.",
+      "tap_target": "min-h-[44px] min-w-[44px] touch-manipulation"
+    },
+    "menu_items": [
+      { "id": "dashboard", "label": "Dashboard", "icon": "LayoutDashboard" },
+      { "id": "pos", "label": "POS / Kasir", "icon": "ShoppingCart" },
+      { "id": "products", "label": "Produk", "icon": "Package" },
+      { "id": "inventory", "label": "Stok / Inventoris", "icon": "Boxes" },
+      { "id": "suppliers", "label": "Supplier", "icon": "Users" },
+      { "id": "supplier_prices", "label": "Price List Supplier", "icon": "FileSpreadsheet" },
+      { "id": "transactions", "label": "Riwayat Transaksi", "icon": "Receipt" },
+      { "id": "reports", "label": "Laporan Bisnis", "icon": "BarChart3" },
+      { "id": "cashflow", "label": "Arus Kas (Cashflow)", "icon": "Wallet" },
+      { "id": "settings", "label": "Pengaturan", "icon": "Settings" }
+    ]
+  },
+  "product_placeholder_strategy": {
+    "has_product_photos": false,
+    "description": "User explicitly requested no product images. Use color-coded category badges + category icons inside styled rounded containers.",
+    "category_visuals": {
+      "Nugget & Sosis": { "icon": "Drumstick", "color": "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+      "Bakso & Dimsum": { "icon": "Utensils", "color": "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+      "Daging & Seafood": { "icon": "Fish", "color": "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+      "Kentang & Side Dish": { "icon": "CookingPot", "color": "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+      "Es Krim & Dessert": { "icon": "IceCream", "color": "bg-pink-500/10 text-pink-400 border-pink-500/20" },
+      "Bumbu & Pelengkap": { "icon": "Flame", "color": "bg-purple-500/10 text-purple-400 border-purple-500/20" }
+    }
+  },
+  "responsive": {
+    "breakpoint": "mobile-first",
+    "layout": "On mobile screens, POS cart shifts to a bottom-drawer bar or toggle tab; grid reflows from 1 column on mobile to 3-4 columns on laptop.",
+    "typography": "Fluid scaling with rem/em units. Inputs set to 16px font-size to avoid iOS auto-zoom.",
+    "overflow_guard": "Ensure horizontal scroll prevention with overflow-x-hidden on root containers.",
+    "tap_targets": "Minimum 44x44px for buttons, quantity counters, and navigation tabs."
+  },
+  "component_guidelines": {
+    "pos_module": {
+      "grid_layout": "Responsive product cards (1-col mobile, 2-col tablet, 3-4 col desktop) with instant search, category filters, quick stock indicators.",
+      "cart_panel": "Sticky right sidebar on desktop, collapsible bottom bar / modal sheet on mobile with item count, quantity increment/decrement, clear cart button, subtotal, discount, tax, total, payment modal launcher.",
+      "checkout_modal": "Payment method selection (Tunai, QRIS, Transfer Bank, Debit), nominal calculator buttons (Uang Pas, Rp 50.000, Rp 100.000), change calculator (Kembalian), customer name input.",
+      "receipt": "Printable thermal receipt preview modal formatted for 80mm/58mm thermal printers with store header, itemized list, subtotal, payment detail, footer message, and window.print trigger."
+    },
+    "dashboard_module": {
+      "summary_cards": "7 metrics: Total Penjualan, Total Omzet/Revenue, Jumlah Transaksi, Total Produk, Stok Menipis (Alert), Total Pengeluaran, Estimasi Laba Bersih.",
+      "charts": "Interactive charts using Recharts for daily revenue/expense trends and top-selling frozen food products."
+    },
+    "inventory_module": {
+      "stock_adjustment": "Modal to adjust stock (Tambah / Kurang / Opname) with reason dropdown (Barang Rusak, Expired, Restock, Koreksi).",
+      "stock_history": "Audit log table showing stock movement with filter by date, product, and adjustment type."
+    },
+    "supplier_price_list_module": {
+      "features": "Compare cost price per product across suppliers, auto calculate profit margin when cost price changes, historical price log."
+    },
+    "cashflow_module": {
+      "features": "Auto-calculated income from POS sales + manual entry form for expenses (Listrik freezer, sewa tempat, gaji, operasional) with date filter and category badges."
+    }
+  },
+  "media_and_assets": {
+    "sample_hero_bg": "https://images.unsplash.com/photo-1601599967100-f16100982063?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwyfHxmcm96ZW4lMjBmb29kJTIwc3RvcmFnZSUyMGljZSUyMHRoZW1lfGVufDB8fHx8MTc4ODI4MzE1MXww&ixlib=rb-4.1.0&q=85",
+    "icon_library": "lucide-react"
+  },
+  "instructions_to_main_agent": [
+    "Always wrap interactive elements with data-testid attributes (e.g. data-testid='pos-product-card-1', data-testid='checkout-button', data-testid='theme-toggle').",
+    "Enforce Indonesian language (Bahasa Indonesia) for UI text, labels, status messages, toasts, and buttons.",
+    "Format all monetary values with Rupiah format (e.g., 'Rp 35.000').",
+    "Never use raw transparent header backgrounds or unstyled dropdowns.",
+    "Ensure confirmation modal pops up before deleting products, suppliers, transactions, or expense entries.",
+    "Use sonner for notification toasts when actions succeed or fail.",
+    "Maintain both light and dark themes using a clean CSS variable or Tailwind 'dark:' class strategy with persistent state in localStorage."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": "Follow mobile-first design, high contrast typography, accessible interactive targets, data-testid attributes on all key controls, layered card shadows, and fast touch feedback."
+}

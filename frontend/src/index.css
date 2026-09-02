@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 210 40% 98%;
+        --foreground: 222 47% 11%;
+        --card: 0 0% 100%;
+        --card-foreground: 222 47% 11%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 222 47% 11%;
+        --primary: 18 96% 46%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 210 40% 94%;
+        --secondary-foreground: 222 47% 11%;
+        --muted: 210 40% 94%;
+        --muted-foreground: 215 16% 47%;
+        --accent: 174 84% 32%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 84% 55%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 18 96% 46%;
+        --radius: 0.75rem;
+    }
+    .dark {
+        --background: 222 40% 8%;
+        --foreground: 210 40% 96%;
+        --card: 222 36% 12%;
+        --card-foreground: 210 40% 96%;
+        --popover: 222 36% 12%;
+        --popover-foreground: 210 40% 96%;
+        --primary: 18 100% 60%;
+        --primary-foreground: 222 47% 8%;
+        --secondary: 222 36% 15%;
+        --secondary-foreground: 210 40% 96%;
+        --muted: 222 36% 15%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 168 100% 38%;
+        --accent-foreground: 222 47% 8%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 222 30% 20%;
+        --input: 222 30% 20%;
+        --ring: 18 100% 60%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+    html, body {
+        @apply bg-background text-foreground;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+    body {
+        margin: 0;
+    }
+    input, textarea, select {
+        font-size: 16px;
+    }
+}
+
+.font-mono {
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.4); }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@media print {
+    body * { visibility: hidden; }
+    .print-receipt, .print-receipt * { visibility: visible; }
+    .print-receipt { position: absolute; left: 0; top: 0; width: 80mm; padding: 8px; color: #000; background: #fff; font-family: 'JetBrains Mono', monospace; }
+}
