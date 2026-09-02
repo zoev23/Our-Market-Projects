@@ -149,6 +149,20 @@ class TransactionIn(BaseModel):
     customer_name: Optional[str] = ""
 
 
+class TransactionUpdateItem(BaseModel):
+    product_id: str
+    quantity: int
+    note: Optional[str] = ""
+
+
+class TransactionUpdate(BaseModel):
+    items: List[TransactionUpdateItem]
+    discount: float = 0
+    payment_method: str = "Tunai"
+    cash_received: float = 0
+    customer_name: Optional[str] = ""
+
+
 class StockAdjustIn(BaseModel):
     product_id: str
     quantity: int  # positive add, negative subtract
@@ -465,6 +479,105 @@ async def get_transaction(tid: str, user=Depends(get_current_user)):
     if not doc:
         raise HTTPException(404, "Transaksi tidak ditemukan")
     return doc
+
+
+@api.put("/transactions/{tid}")
+async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get_current_user)):
+    old = await db.transactions.find_one({"id": tid})
+    if not old:
+        raise HTTPException(404, "Transaksi tidak ditemukan")
+    # Only allow editing existing items (qty>0 keeps; qty<=0 removes). No adding new products here.
+    incoming = [i for i in body.items if i.quantity > 0]
+    if not incoming:
+        raise HTTPException(400, "Transaksi harus memiliki minimal 1 item")
+
+    old_by_pid = {i["product_id"]: i for i in old.get("items", [])}
+    new_by_pid = {i.product_id: i for i in incoming}
+
+    # Reject unknown product_ids (would require new item add — out of scope)
+    for pid in new_by_pid:
+        if pid not in old_by_pid:
+            raise HTTPException(400, "Menambah item baru tidak didukung saat edit")
+
+    # Compute stock deltas. delta = new_qty - old_qty (positive = need more stock).
+    stock_deltas = {}
+    for pid, oi in old_by_pid.items():
+        old_q = int(oi.get("quantity", 0))
+        new_q = int(new_by_pid[pid].quantity) if pid in new_by_pid else 0
+        d = new_q - old_q
+        if d != 0:
+            stock_deltas[pid] = d
+
+    # Validate stock availability for any positive deltas
+    for pid, d in stock_deltas.items():
+        if d > 0:
+            prod = await db.products.find_one({"id": pid})
+            if not prod or int(prod.get("stock", 0)) < d:
+                raise HTTPException(400, f"Stok tidak cukup untuk {prod.get('name') if prod else 'produk'}")
+
+    # Apply stock deltas & log to inventory_history
+    txn_number = old.get("transaction_number", tid)
+    for pid, d in stock_deltas.items():
+        await db.products.update_one({"id": pid}, {"$inc": {"stock": -d}, "$set": {"updated_at": now_iso()}})
+        prod = await db.products.find_one({"id": pid})
+        await db.inventory_history.insert_one({
+            "id": new_id(),
+            "product_id": pid,
+            "product_name": prod.get("name"),
+            "variant": prod.get("variant"),
+            "type": "edit",
+            "quantity": -d,
+            "reason": f"Edit transaksi {txn_number}",
+            "created_at": now_iso(),
+            "user_email": user["email"],
+        })
+
+    # Rebuild line items using historical price/cost (preserve accounting accuracy)
+    line_items = []
+    subtotal = 0.0
+    total_cost = 0.0
+    for i in incoming:
+        oi = old_by_pid[i.product_id]
+        price = float(oi.get("price", 0))
+        cost = float(oi.get("cost_price", 0))
+        sub = price * i.quantity
+        cost_sub = cost * i.quantity
+        line_items.append({
+            "product_id": i.product_id,
+            "product_name": oi.get("product_name"),
+            "variant": oi.get("variant", ""),
+            "quantity": i.quantity,
+            "price": price,
+            "cost_price": cost,
+            "subtotal": sub,
+            "profit": sub - cost_sub,
+            "note": (i.note or "").strip(),
+        })
+        subtotal += sub
+        total_cost += cost_sub
+
+    discount = float(body.discount or 0)
+    total_amount = max(subtotal - discount, 0)
+    profit = total_amount - total_cost
+    cash_received = float(body.cash_received or total_amount)
+    change_amount = max(cash_received - total_amount, 0)
+
+    upd = {
+        "items": line_items,
+        "subtotal": subtotal,
+        "discount": discount,
+        "total_amount": total_amount,
+        "total_cost": total_cost,
+        "profit": profit,
+        "payment_method": body.payment_method,
+        "cash_received": cash_received,
+        "change_amount": change_amount,
+        "customer_name": body.customer_name or "",
+        "updated_at": now_iso(),
+        "edited_by": user["email"],
+    }
+    await db.transactions.update_one({"id": tid}, {"$set": upd})
+    return await db.transactions.find_one({"id": tid}, {"_id": 0})
 
 
 # ---------- Expenses ----------
