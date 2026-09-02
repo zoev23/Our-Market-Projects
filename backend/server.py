@@ -148,6 +148,7 @@ class TransactionIn(BaseModel):
     payment_method: str = "Tunai"
     cash_received: float = 0
     customer_name: Optional[str] = ""
+    transaction_date: Optional[str] = None
 
 
 class TransactionUpdateItem(BaseModel):
@@ -442,6 +443,17 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
     count = await db.transactions.count_documents({}) + 1
     txn_number = f"TRX-{today}-{count:05d}"
 
+    # allow user to override transaction date (kasir can backdate/forward-date)
+    created_at = now_iso()
+    if body.transaction_date:
+        try:
+            dt = datetime.fromisoformat(body.transaction_date.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            created_at = dt.astimezone(timezone.utc).isoformat()
+        except Exception:
+            raise HTTPException(400, "Format tanggal transaksi tidak valid")
+
     doc = {
         "id": new_id(),
         "transaction_number": txn_number,
@@ -456,7 +468,7 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
         "change_amount": change_amount,
         "customer_name": body.customer_name or "",
         "cashier_email": user["email"],
-        "created_at": now_iso(),
+        "created_at": created_at,
     }
     await db.transactions.insert_one(doc)
     doc.pop("_id", None)

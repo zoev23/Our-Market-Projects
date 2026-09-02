@@ -21,6 +21,7 @@ export default function POS() {
   const [cashReceived, setCashReceived] = useState(0);
   const [payment, setPayment] = useState("Tunai");
   const [customerName, setCustomerName] = useState("");
+  const [txnDate, setTxnDate] = useState(""); // yyyy-mm-ddThh:mm local; empty = now
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTxn, setLastTxn] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -71,10 +72,11 @@ export default function POS() {
         payment_method: payment,
         cash_received: Number(cashReceived) || grand,
         customer_name: customerName.trim(),
+        transaction_date: txnDate ? new Date(txnDate).toISOString() : null,
       });
       setLastTxn(data);
       setShowReceipt(true);
-      setCart([]); setDiscount(0); setCashReceived(0); setCustomerName(""); setCartOpen(false);
+      setCart([]); setDiscount(0); setCashReceived(0); setCustomerName(""); setTxnDate(""); setCartOpen(false);
       load();
       toast.success("Transaksi berhasil");
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
@@ -141,6 +143,31 @@ export default function POS() {
             className="mt-1"
             data-testid="pos-customer-name"
           />
+        </div>
+        <div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Tanggal Transaksi</Label>
+            {txnDate && (
+              <button
+                type="button"
+                onClick={() => setTxnDate("")}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+                data-testid="pos-txn-date-clear"
+              >
+                Reset ke sekarang
+              </button>
+            )}
+          </div>
+          <Input
+            type="datetime-local"
+            value={txnDate}
+            onChange={(e) => setTxnDate(e.target.value)}
+            className="mt-1"
+            data-testid="pos-txn-date"
+          />
+          <div className="text-[10px] text-muted-foreground mt-1">
+            Kosongkan untuk pakai tanggal & jam sekarang.
+          </div>
         </div>
         <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-mono">{formatRp(subtotal)}</span></div>
         <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Diskon</span>
