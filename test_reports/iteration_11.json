@@ -1,0 +1,40 @@
+{
+  "summary": "Verified new Fonnte WhatsApp integration end-to-end. Backend (16/16 pytest passing in test_whatsapp_fonnte.py): GET/PUT /api/settings expose & persist fonnte_api_key + fonnte_device (defaults empty strings); POST /api/whatsapp/send returns 401 without auth, 400 with 'API key Fonnte belum diatur. Silakan atur di menu Pengaturan.' when key empty, and 502 (Fonnte gagal:/Fonnte error:) with invalid key — verified for phone formats 08xxx, 62xxx, +62xxx, 8xxx (phone normalization reaches the Fonnte layer instead of failing 400). POST /api/webhook/fonnte (no auth): bad format ('Only two parts') → {ok:false, reason:'Format: NAMA, Produk, Jumlah, Variant, Deskripsi'} HTTP 200; non-integer qty → 'Jumlah harus angka'; unknown product → 'tidak ditemukan'; insufficient stock → 'tidak cukup'; happy path creates transaction with customer_name, customer_phone=sender, source='whatsapp', payment_method='WhatsApp', item.note captured, and product stock decremented by qty. Fuzzy match: 'risoles' lowercase → 'Risoles', partial variant 'Coklat' → 'Coklat Keju'. JSON body accepted alongside form-encoded. Test cleanup deletes TEST_WA_* transactions via DELETE /api/transactions/{id}. Frontend (Playwright, live): /settings shows new 'Integrasi WhatsApp (Fonnte)' section with settings-fonnte-key (type=password), settings-fonnte-device, and settings-webhook-url ending with '/api/webhook/fonnte'; Save persists both fields (verified via reload). Transactions → Detail Transaksi → new green 'WhatsApp' button (receipt-wa) opens dialog with wa-phone input and wa-manual + wa-auto-send buttons alongside existing Tutup/JPG/PNG/Cetak. Empty phone + wa-auto-send → toast 'Nomor WhatsApp tidak valid'. wa-manual opens 'https://wa.me/6281234567890?text=...' with encoded receipt containing TRX-... number. wa-auto-send with empty backend Fonnte key gracefully catches 400 and falls back to wa.me automatically.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/whatsapp/send", "issue": "When backend returns 502 (Fonnte gagal), Cloudflare edge intercepts the 5xx response and replaces the FastAPI JSON body ({detail:'Fonnte gagal: ...'}) with its own Cloudflare 502 HTML page. Status code still reaches the client but the human-readable detail message is lost. Consider returning 200 with {ok:false, reason:'...'} (like the webhook) so the frontend can display the actual Fonnte failure reason to the user."},
+      {"endpoint": "POST /api/webhook/fonnte", "issue": "transaction_number generation uses count_documents+1 (line ~778), so after a DELETE the same TRX-YYYYMMDD-NNNNN can be reused. Same latent issue flagged in iteration_10 minor list — now also triggered by WhatsApp orders."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Receipt WhatsApp fallback message", "issue": "buildWaMessage() header falls back to '*Struk*' when settings.store_name is falsy; when the Receipt dialog is opened from Transactions before /api/settings resolves (or if store_name is empty), the WhatsApp message shows literal 'Struk' as store name instead of the real store name. Consider gating the wa-manual/wa-auto-send buttons until settings is truthy or displaying settings.store_name as fetched. Non-blocking.", "affected_selectors": ["receipt-wa","wa-manual","wa-auto-send"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_whatsapp_fonnte.py",
+    "/app/test_reports/pytest/whatsapp_fonnte.xml"
+  ],
+  "action_items": [
+    "(Optional) Change /api/whatsapp/send failure path to return HTTP 200 with {ok:false, reason} to bypass Cloudflare 5xx body rewriting so users see the real Fonnte failure reason.",
+    "(Optional) Fallback for buildWaMessage: only use '*Struk*' if settings really is null; otherwise render blank so users notice missing store_name early. Alternatively disable receipt-wa buttons while settings is still loading."
+  ],
+  "critical_code_review_comments": [
+    "Backend _normalize_phone correctly handles 0xxx, 62xxx, +62xxx, and bare 8xxx (verified via 4 parametric tests hitting the Fonnte layer without 400 rejection).",
+    "Webhook /api/webhook/fonnte is intentionally unauthenticated (required for Fonnte to POST). Good. However there is no source-IP or shared-secret verification — anyone who guesses the URL can create transactions and decrement stock. Consider adding an optional shared secret in Settings + validation header (e.g. X-Fonnte-Token).",
+    "Webhook creates transactions but uses cashier_email='whatsapp-bot' — good. Note that inventory_history entry uses type='sale' with quantity=-jumlah, consistent with POS path.",
+    "Receipt.jsx buildWaMessage uses a nice compact format. Consider handling missing settings gracefully (early-return + toast) rather than falling back to '*Struk*'.",
+    "server.py is now 1245 lines — approaching the 700-line threshold; consider splitting into modules (settings, whatsapp, transactions, reports)."
+  ],
+  "updated_files": ["/app/backend/tests/test_whatsapp_fonnte.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% (settings persist + all wa dialog flows: empty-phone toast, wa-manual opens wa.me with TRX + text, wa-auto-send falls back to wa.me on 400)"},
+  "test_credentials": "mrseptianno@gmail.com / admin123",
+  "seed_data_creation": "Ephemeral transactions with customer_name='TEST_WA_<hex>' created and immediately DELETEd within each webhook test. Also flipped fonnte_api_key to 'INVALID_TEST_KEY_XXX' and restored to prior value inside try/finally in each send-endpoint test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_whatsapp_fonnte.py covers webhook + /whatsapp/send + settings. Cloudflare edge rewrites 5xx origin responses so /whatsapp/send 502 body is not readable by clients — tests only assert status code. When adding new tests that expect a JSON body on 5xx from FastAPI, prefer 200 + {ok:false} pattern (see webhook). Product stock is a global state — happy_path test picks any product with stock>=5, uses 2 units, then deletes the transaction and stock is restored by the existing DELETE handler.",
+  "rca of the issue": "N/A — feature works. Cloudflare 502-body rewrite is an environment quirk, not an app bug, but is documented as an action item because it degrades the fallback UX message on real Fonnte failures."
+}

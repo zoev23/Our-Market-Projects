@@ -8,6 +8,7 @@ import uuid
 import logging
 import bcrypt
 import jwt
+import httpx
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
@@ -183,6 +184,13 @@ class SettingsIn(BaseModel):
     phone: Optional[str] = None
     receipt_footer: Optional[str] = None
     logo: Optional[str] = None
+    fonnte_api_key: Optional[str] = None
+    fonnte_device: Optional[str] = None
+
+
+class WhatsAppSendIn(BaseModel):
+    phone: str
+    message: str
 
 
 # ---------- Auth routes ----------
@@ -646,9 +654,14 @@ async def get_settings(user=Depends(get_current_user)):
             "phone": "0812-3456-7890",
             "receipt_footer": "Terima kasih atas pesanan Anda ❤",
             "logo": "",
+            "fonnte_api_key": "",
+            "fonnte_device": "",
         }
         await db.settings.insert_one(s)
         s.pop("_id", None)
+    # ensure new keys always exist
+    s.setdefault("fonnte_api_key", "")
+    s.setdefault("fonnte_device", "")
     return s
 
 
@@ -657,6 +670,143 @@ async def update_settings(body: SettingsIn, user=Depends(get_current_user)):
     upd = {k: v for k, v in body.model_dump().items() if v is not None}
     await db.settings.update_one({"id": "default"}, {"$set": upd}, upsert=True)
     return await db.settings.find_one({"id": "default"}, {"_id": 0})
+
+
+# ---------- WhatsApp (Fonnte) ----------
+def _normalize_phone(raw: str) -> str:
+    p = (raw or "").strip().replace(" ", "").replace("-", "").replace("+", "")
+    if p.startswith("0"):
+        p = "62" + p[1:]
+    if p.startswith("62") is False and p.startswith("8"):
+        p = "62" + p
+    return p
+
+
+@api.post("/whatsapp/send")
+async def send_whatsapp(body: WhatsAppSendIn, user=Depends(get_current_user)):
+    settings = await db.settings.find_one({"id": "default"}) or {}
+    api_key = (settings.get("fonnte_api_key") or "").strip()
+    if not api_key:
+        return {"ok": False, "reason": "API key Fonnte belum diatur. Silakan atur di menu Pengaturan."}
+    phone = _normalize_phone(body.phone)
+    if not phone or not phone.isdigit():
+        return {"ok": False, "reason": "Nomor WhatsApp tidak valid"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.fonnte.com/send",
+                headers={"Authorization": api_key},
+                data={"target": phone, "message": body.message},
+            )
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"raw": resp.text}
+        if resp.status_code >= 400 or (isinstance(data, dict) and data.get("status") is False):
+            reason = data.get("reason") if isinstance(data, dict) else str(data)
+            return {"ok": False, "reason": f"Fonnte gagal: {reason or 'unknown'}"}
+        return {"ok": True, "provider": "fonnte", "response": data}
+    except Exception as e:
+        return {"ok": False, "reason": f"Fonnte error: {str(e)}"}
+
+
+@api.post("/webhook/fonnte")
+async def webhook_fonnte(request: Request):
+    # Fonnte webhook typically sends form-encoded fields (sender, message, ...)
+    payload = {}
+    try:
+        ct = (request.headers.get("content-type") or "").lower()
+        if "application/json" in ct:
+            payload = await request.json()
+        else:
+            form = await request.form()
+            payload = {k: v for k, v in form.items()}
+    except Exception:
+        payload = {}
+    sender = str(payload.get("sender") or payload.get("from") or "").strip()
+    message = str(payload.get("message") or payload.get("text") or "").strip()
+    if not message:
+        return {"ok": False, "reason": "Pesan kosong"}
+
+    parts = [p.strip() for p in message.split(",")]
+    if len(parts) < 3:
+        return {"ok": False, "reason": "Format: NAMA, Produk, Jumlah, Variant, Deskripsi"}
+    nama = parts[0]
+    produk = parts[1]
+    try:
+        jumlah = int(parts[2])
+    except Exception:
+        return {"ok": False, "reason": "Jumlah harus angka"}
+    if jumlah <= 0:
+        return {"ok": False, "reason": "Jumlah harus > 0"}
+    variant = parts[3] if len(parts) > 3 else ""
+    deskripsi = parts[4] if len(parts) > 4 else ""
+
+    prods = await db.products.find({}, {"_id": 0}).to_list(2000)
+    def norm(s): return (s or "").strip().lower()
+    match = None
+    for p in prods:
+        if norm(p.get("name")) == norm(produk) and (not variant or norm(p.get("variant")) == norm(variant)):
+            match = p; break
+    if not match:
+        for p in prods:
+            if norm(produk) in norm(p.get("name")) and (not variant or norm(variant) in norm(p.get("variant"))):
+                match = p; break
+    if not match:
+        return {"ok": False, "reason": f"Produk '{produk}' tidak ditemukan"}
+    if int(match.get("stock", 0)) < jumlah:
+        return {"ok": False, "reason": f"Stok {match['name']} tidak cukup (sisa {match.get('stock',0)})"}
+
+    price = float(match.get("selling_price", 0))
+    cost = float(match.get("cost_price", 0))
+    sub = price * jumlah
+    cost_sub = cost * jumlah
+    line = {
+        "product_id": match["id"],
+        "product_name": match["name"],
+        "variant": match.get("variant", ""),
+        "quantity": jumlah,
+        "price": price,
+        "cost_price": cost,
+        "subtotal": sub,
+        "profit": sub - cost_sub,
+        "note": deskripsi,
+    }
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    count = await db.transactions.count_documents({}) + 1
+    txn_number = f"TRX-{today}-{count:05d}"
+    doc = {
+        "id": new_id(),
+        "transaction_number": txn_number,
+        "items": [line],
+        "subtotal": sub,
+        "discount": 0,
+        "total_amount": sub,
+        "total_cost": cost_sub,
+        "profit": sub - cost_sub,
+        "payment_method": "WhatsApp",
+        "cash_received": sub,
+        "change_amount": 0,
+        "customer_name": nama,
+        "customer_phone": sender,
+        "source": "whatsapp",
+        "cashier_email": "whatsapp-bot",
+        "created_at": now_iso(),
+    }
+    await db.transactions.insert_one(doc)
+    await db.products.update_one({"id": match["id"]}, {"$inc": {"stock": -jumlah}, "$set": {"updated_at": now_iso()}})
+    await db.inventory_history.insert_one({
+        "id": new_id(),
+        "product_id": match["id"],
+        "product_name": match["name"],
+        "variant": match.get("variant"),
+        "type": "sale",
+        "quantity": -jumlah,
+        "reason": f"WhatsApp order dari {nama}",
+        "created_at": now_iso(),
+        "user_email": "whatsapp-bot",
+    })
+    return {"ok": True, "transaction_number": txn_number, "total": sub, "message": f"Order {txn_number} tercatat: {jumlah}x {match['name']} — {match.get('variant','')}"}
 
 
 # ---------- Dashboard/Reports ----------
