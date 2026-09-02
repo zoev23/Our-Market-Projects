@@ -77,7 +77,7 @@ export default function POS() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
 
-  const CartPanel = () => (
+  const cartPanel = (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <div className="font-semibold flex items-center gap-2"><ShoppingCart size={18} /> Keranjang</div>
@@ -202,7 +202,7 @@ export default function POS() {
           {filtered.length === 0 && <div className="col-span-full text-center text-muted-foreground py-16">Tidak ada produk.</div>}
         </div>
       </div>
-      <aside className="hidden lg:flex bg-card border border-border rounded-xl overflow-hidden"><CartPanel /></aside>
+      <aside className="hidden lg:flex bg-card border border-border rounded-xl overflow-hidden">{cartPanel}</aside>
 
       {/* Mobile floating cart button */}
       <button onClick={() => setCartOpen(true)} className="lg:hidden fixed bottom-20 right-4 z-40 bg-primary text-primary-foreground rounded-full h-14 w-14 shadow-lg grid place-items-center" data-testid="pos-cart-open">
@@ -214,7 +214,7 @@ export default function POS() {
       {cartOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col">
           <div className="flex-1 bg-black/50" onClick={() => setCartOpen(false)}></div>
-          <div className="h-[85vh] bg-card rounded-t-2xl border-t border-border"><CartPanel /></div>
+          <div className="h-[85vh] bg-card rounded-t-2xl border-t border-border">{cartPanel}</div>
         </div>
       )}
 
