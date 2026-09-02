@@ -20,6 +20,7 @@ export default function POS() {
   const [discount, setDiscount] = useState(0);
   const [cashReceived, setCashReceived] = useState(0);
   const [payment, setPayment] = useState("Tunai");
+  const [customerName, setCustomerName] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTxn, setLastTxn] = useState(null);
   const [settings, setSettings] = useState(null);
@@ -69,10 +70,11 @@ export default function POS() {
         discount: Number(discount) || 0,
         payment_method: payment,
         cash_received: Number(cashReceived) || grand,
+        customer_name: customerName.trim(),
       });
       setLastTxn(data);
       setShowReceipt(true);
-      setCart([]); setDiscount(0); setCashReceived(0); setCartOpen(false);
+      setCart([]); setDiscount(0); setCashReceived(0); setCustomerName(""); setCartOpen(false);
       load();
       toast.success("Transaksi berhasil");
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
@@ -130,6 +132,16 @@ export default function POS() {
         ))}
       </div>
       <div className="border-t border-border p-4 space-y-3 bg-card">
+        <div>
+          <Label className="text-xs">Nama Pembeli</Label>
+          <Input
+            value={customerName}
+            onChange={(e) => setCustomerName(e.target.value)}
+            placeholder="Contoh: Septi (opsional)"
+            className="mt-1"
+            data-testid="pos-customer-name"
+          />
+        </div>
         <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span className="font-mono">{formatRp(subtotal)}</span></div>
         <div className="flex justify-between items-center text-sm"><span className="text-muted-foreground">Diskon</span>
           <Input type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} className="w-28 h-8 text-right font-mono" data-testid="pos-discount" />
