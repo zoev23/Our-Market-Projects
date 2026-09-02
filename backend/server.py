@@ -823,45 +823,78 @@ async def webhook_fonnte(request: Request):
 
 # ---------- Dashboard/Reports ----------
 @api.get("/dashboard/summary")
-async def dashboard_summary(user=Depends(get_current_user)):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    all_txns = await db.transactions.find({}, {"_id": 0}).to_list(5000)
-    today_txns = [t for t in all_txns if t.get("created_at", "").startswith(today)]
-    total_sales_today = sum(sum(i["quantity"] for i in t.get("items", [])) for t in today_txns)
-    revenue_today = sum(t.get("total_amount", 0) for t in today_txns)
-    profit_today = sum(t.get("profit", 0) for t in today_txns)
-    total_transaction = len(all_txns)
+async def dashboard_summary(
+    user=Depends(get_current_user),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    # Default range = today (00:00 UTC → now) when neither bound is given
+    default_today = False
+    if not start_date and not end_date:
+        s = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = s.isoformat()
+        end_date = datetime.now(timezone.utc).isoformat()
+        default_today = True
+
+    q = {}
+    if start_date or end_date:
+        q["created_at"] = {}
+        if start_date:
+            q["created_at"]["$gte"] = start_date
+        if end_date:
+            q["created_at"]["$lte"] = end_date
+    period_txns = await db.transactions.find(q, {"_id": 0}).to_list(10000)
+    all_txns = await db.transactions.find({}, {"_id": 0}).to_list(10000)
     products = await db.products.find({}, {"_id": 0}).to_list(2000)
+
+    eq = {}
+    if start_date or end_date:
+        eq["date"] = {}
+        if start_date:
+            eq["date"]["$gte"] = start_date
+        if end_date:
+            eq["date"]["$lte"] = end_date
+    period_expenses = await db.expenses.find(eq, {"_id": 0}).to_list(2000)
+    all_expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
+
+    period_sales = sum(sum(i["quantity"] for i in t.get("items", [])) for t in period_txns)
+    period_revenue = sum(t.get("total_amount", 0) for t in period_txns)
+    period_profit_gross = sum(t.get("profit", 0) for t in period_txns)
+    period_transactions = len(period_txns)
+    period_expense = sum(e.get("amount", 0) for e in period_expenses)
+    period_net_profit = period_profit_gross - period_expense
+
+    total_transaction_all = len(all_txns)
+    total_revenue_all = sum(t.get("total_amount", 0) for t in all_txns)
+    total_profit_all = sum(t.get("profit", 0) for t in all_txns)
+    total_expense_all = sum(e.get("amount", 0) for e in all_expenses)
+    estimated_profit_all = total_profit_all - total_expense_all
+
     total_product = len(products)
     total_stock = sum(int(p.get("stock", 0)) for p in products)
     low_stock = [p for p in products if int(p.get("stock", 0)) <= int(p.get("minimum_stock", 5))]
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
-    total_expense = sum(e.get("amount", 0) for e in expenses)
-    total_revenue = sum(t.get("total_amount", 0) for t in all_txns)
-    total_profit_all = sum(t.get("profit", 0) for t in all_txns)
-    estimated_profit = total_profit_all - total_expense
 
-    # Daily series last 7 days
+    # Daily series from period txns
     daily = {}
-    for t in all_txns:
+    for t in period_txns:
         d = (t.get("created_at") or "")[:10]
         if not d:
             continue
-        daily.setdefault(d, {"date": d, "revenue": 0, "profit": 0, "transactions": 0})
+        daily.setdefault(d, {"date": d, "revenue": 0, "profit": 0, "transactions": 0, "expense": 0})
         daily[d]["revenue"] += t.get("total_amount", 0)
         daily[d]["profit"] += t.get("profit", 0)
         daily[d]["transactions"] += 1
-    for e in expenses:
+    for e in period_expenses:
         d = (e.get("date") or "")[:10]
         if not d:
             continue
         daily.setdefault(d, {"date": d, "revenue": 0, "profit": 0, "transactions": 0, "expense": 0})
         daily[d]["expense"] = daily[d].get("expense", 0) + e.get("amount", 0)
-    series = sorted(daily.values(), key=lambda x: x["date"])[-14:]
+    series = sorted(daily.values(), key=lambda x: x["date"])
 
-    # Top selling
+    # Top selling from period txns
     top = {}
-    for t in all_txns:
+    for t in period_txns:
         for i in t.get("items", []):
             key = i["product_name"] + (f" - {i['variant']}" if i.get("variant") else "")
             top.setdefault(key, {"name": key, "qty": 0, "revenue": 0})
@@ -870,18 +903,41 @@ async def dashboard_summary(user=Depends(get_current_user)):
     top_products = sorted(top.values(), key=lambda x: x["qty"], reverse=True)[:5]
 
     return {
-        "total_sales_today": total_sales_today,
-        "revenue_today": revenue_today,
-        "profit_today": profit_today,
-        "total_transaction": total_transaction,
+        # Period-based (respects filter)
+        "period_sales": period_sales,
+        "period_revenue": period_revenue,
+        "period_transactions": period_transactions,
+        "period_profit_gross": period_profit_gross,
+        "period_expense": period_expense,
+        "period_net_profit": period_net_profit,
+        # All-time totals (ignore filter)
+        "total_transactions_all": total_transaction_all,
+        "total_revenue_all": total_revenue_all,
+        "total_profit_all": total_profit_all,
+        "total_expense_all": total_expense_all,
+        "estimated_profit_all": estimated_profit_all,
+        # Inventory (not filtered)
         "total_product": total_product,
         "total_stock": total_stock,
-        "total_expense": total_expense,
-        "estimated_profit": estimated_profit,
-        "total_revenue": total_revenue,
-        "low_stock_products": [{"id": p["id"], "name": p["name"], "variant": p.get("variant", ""), "stock": p.get("stock", 0), "minimum_stock": p.get("minimum_stock", 5)} for p in low_stock[:10]],
+        "low_stock_products": [
+            {"id": p["id"], "name": p["name"], "variant": p.get("variant", ""), "stock": p.get("stock", 0), "minimum_stock": p.get("minimum_stock", 5)}
+            for p in low_stock[:10]
+        ],
+        # Charts
         "series": series,
         "top_products": top_products,
+        # Meta
+        "start_date": start_date,
+        "end_date": end_date,
+        "default_today": default_today,
+        # Backwards-compat aliases for older UI (still used elsewhere)
+        "total_sales_today": period_sales,
+        "revenue_today": period_revenue,
+        "profit_today": period_profit_gross,
+        "total_transaction": total_transaction_all,
+        "total_expense": total_expense_all,
+        "estimated_profit": estimated_profit_all,
+        "total_revenue": total_revenue_all,
     }
 
 

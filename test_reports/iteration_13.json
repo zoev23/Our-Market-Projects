@@ -1,0 +1,23 @@
+{
+  "summary": "Dashboard date-range filter feature tested end-to-end. Backend GET /api/dashboard/summary correctly returns default_today=true when no params, with period_* keys reflecting today (Rp 165.000) and total_*_all reflecting all-time (Rp 224.000). Full-range 2020-2030 makes period_revenue==total_revenue_all. Series/top_products correctly scoped to period. Backwards-compat aliases intact. Frontend Dashboard renders all 8 required summary-* data-testids with correct sub-labels ('HARI INI'/'SEPANJANG MASA'/'SEMUA WAKTU' etc.), dashboard-range selector works, Custom shows dashboard-start/dashboard-end date inputs, chart title includes range label, and switching to 'Semua Waktu' or Custom 2020-2030 makes period_revenue value equal total_revenue_all value. Kemarin correctly returns Rp 0 (no yesterday txns). Navigation regression OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_dashboard_range.py",
+    "/app/test_reports/pytest/dashboard_range.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dashboard_summary stores date filter using string comparison on created_at (Mongo `$gte`/`$lte` against ISO strings). Works because created_at is stored as ISO string; still, timezone offsets in ISO can produce lexicographic surprises. Consider normalizing to UTC 'Z' before compare, or store as BSON Date.",
+    "server.py contains dead code: lines 943+ show an unreachable second `return { total_sales_today: ... }` block after the primary return in dashboard_summary. Harmless but should be cleaned up.",
+    "Frontend `custom` range's end date uses local-time `new Date(customEnd + 'T23:59:59').toISOString()` which shifts by TZ offset; for a user in UTC+7 an end date of 2025-01-31 becomes 2025-01-31T16:59:59Z. Acceptable but worth documenting."
+  ],
+  "updated_files": ["/app/backend/tests/test_dashboard_range.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "mrseptianno@gmail.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None; used existing transactions in DB (today revenue Rp 165.000, all-time Rp 224.000).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test file: /app/backend/tests/test_dashboard_range.py covers default_today, full-range equivalence, empty period, backwards-compat aliases, invalid date tolerance. Playwright verified selector data-testid=dashboard-range, dashboard-start, dashboard-end, and summary-{period_sales,period_revenue,period_transactions,period_net_profit,period_expense,total_product,total_stock,total_revenue_all}. Chart title 'Tren Penjualan & Laba — <range label>' verified."
+}
