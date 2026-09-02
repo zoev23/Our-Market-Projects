@@ -766,6 +766,76 @@ async def reports(
     }
 
 
+@api.get("/reports/supplier-recap")
+async def supplier_recap(
+    user=Depends(get_current_user),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    q = {}
+    if start_date or end_date:
+        q["created_at"] = {}
+        if start_date:
+            q["created_at"]["$gte"] = start_date
+        if end_date:
+            q["created_at"]["$lte"] = end_date
+    txns = await db.transactions.find(q, {"_id": 0}).to_list(10000)
+    products = {p["id"]: p for p in await db.products.find({}, {"_id": 0}).to_list(2000)}
+    suppliers = {s["id"]: s for s in await db.suppliers.find({}, {"_id": 0}).to_list(500)}
+
+    agg = {}
+    for t in txns:
+        for i in t.get("items", []):
+            pid = i.get("product_id")
+            prod = products.get(pid, {}) if pid else {}
+            sup_id = prod.get("supplier_id") or "unknown"
+            sup_name = suppliers.get(sup_id, {}).get("name") or "Tanpa Supplier"
+            key = (sup_id, pid or i.get("product_name"))
+            if key not in agg:
+                agg[key] = {
+                    "supplier_id": sup_id,
+                    "supplier_name": sup_name,
+                    "product_id": pid,
+                    "product_name": i.get("product_name"),
+                    "variant": i.get("variant", ""),
+                    "description": prod.get("description", ""),
+                    "sku": prod.get("sku", ""),
+                    "quantity": 0,
+                }
+            agg[key]["quantity"] += int(i.get("quantity", 0))
+
+    groups = {}
+    for item in agg.values():
+        sid = item["supplier_id"]
+        groups.setdefault(sid, {
+            "supplier_id": sid,
+            "supplier_name": item["supplier_name"],
+            "items": [],
+            "total_quantity": 0,
+        })
+        groups[sid]["items"].append({
+            "product_name": item["product_name"],
+            "variant": item["variant"],
+            "description": item["description"],
+            "sku": item["sku"],
+            "quantity": item["quantity"],
+        })
+        groups[sid]["total_quantity"] += item["quantity"]
+
+    result = list(groups.values())
+    for g in result:
+        g["items"].sort(key=lambda x: (x["product_name"], x["variant"]))
+    result.sort(key=lambda g: g["supplier_name"])
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "groups": result,
+        "total_items": sum(g["total_quantity"] for g in result),
+        "total_suppliers": len(result),
+        "transaction_count": len(txns),
+    }
+
+
 @api.get("/cashflow/summary")
 async def cashflow_summary(user=Depends(get_current_user)):
     txns = await db.transactions.find({}, {"_id": 0}).to_list(5000)

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, FileSpreadsheet, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, X } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, FileSpreadsheet, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, X, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -14,6 +14,7 @@ const menu = [
   { to: "/supplier-prices", label: "Price List Supplier", icon: FileSpreadsheet, id: "supplier-prices" },
   { to: "/transactions", label: "Transaksi", icon: Receipt, id: "transactions" },
   { to: "/reports", label: "Laporan", icon: BarChart3, id: "reports" },
+  { to: "/supplier-recap", label: "Rekap Supplier", icon: ClipboardList, id: "supplier-recap" },
   { to: "/cashflow", label: "Cashflow", icon: Wallet, id: "cashflow" },
   { to: "/settings", label: "Pengaturan", icon: Settings, id: "settings" },
 ];
