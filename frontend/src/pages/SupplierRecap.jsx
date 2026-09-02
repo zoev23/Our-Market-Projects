@@ -32,6 +32,7 @@ export default function SupplierRecap() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [data, setData] = useState(null);
+  const [buyerData, setBuyerData] = useState(null);
   const [storeName, setStoreName] = useState("");
   const previewRef = useRef(null);
 
@@ -54,6 +55,7 @@ export default function SupplierRecap() {
     if (activeRange.start) params.set("start_date", activeRange.start);
     if (activeRange.end) params.set("end_date", activeRange.end);
     api.get(`/reports/supplier-recap?${params.toString()}`).then((r) => setData(r.data));
+    api.get(`/reports/buyer-recap?${params.toString()}`).then((r) => setBuyerData(r.data));
   }, [activeRange.start, activeRange.end]);
 
   const exportImage = async (type = "png") => {
@@ -80,15 +82,19 @@ export default function SupplierRecap() {
   };
 
   const treeText = useMemo(() => {
-    if (!data) return "";
+    if (!buyerData) return "";
     const lines = [];
-    lines.push(`REKAP KEBUTUHAN RESTOCK - ${storeName || "Our Project Market"}`);
+    lines.push(`REKAP PEMBELI - ${storeName || "Our Project Market"}`);
     lines.push(`Periode: ${rangeLabelStatic(range, customStart, customEnd)}`);
-    lines.push(`Total Item: ${data.total_items} pcs | Supplier: ${data.total_suppliers} | Transaksi: ${data.transaction_count}`);
+    lines.push(`Total Item: ${buyerData.total_items} pcs | Pembeli: ${buyerData.total_buyers} | Transaksi: ${buyerData.transaction_count}`);
     lines.push("");
-    data.groups.forEach((g, gi) => {
+    if (buyerData.groups.length === 0) {
+      lines.push("(Belum ada transaksi pada periode ini)");
+      return lines.join("\n");
+    }
+    buyerData.groups.forEach((g, gi) => {
       if (gi > 0) lines.push("");
-      lines.push(g.supplier_name);
+      lines.push(`${g.customer_name}   (${g.transaction_count}x transaksi, ${g.total_quantity} pcs)`);
       g.items.forEach((it, i) => {
         const isLast = i === g.items.length - 1;
         const branch = isLast ? "└──" : "├──";
@@ -100,7 +106,7 @@ export default function SupplierRecap() {
       });
     });
     return lines.join("\n");
-  }, [data, range, customStart, customEnd, storeName]);
+  }, [buyerData, range, customStart, customEnd, storeName]);
 
   const dlName = () => `rekap-supplier-${new Date().toISOString().slice(0,10)}`;
 
@@ -252,11 +258,11 @@ export default function SupplierRecap() {
         </div>
       )}
 
-      {data && data.groups.length > 0 && (
+      {data && (
         <div className="bg-card border border-border rounded-xl p-4 sm:p-5">
           <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <div>
-              <div className="text-sm font-semibold">Format Teks Terstruktur</div>
+              <div className="text-sm font-semibold">Format Teks Terstruktur (dikelompokkan per Nama Pembeli)</div>
               <div className="text-xs text-muted-foreground">Preview persis seperti hasil export TXT/PDF.</div>
             </div>
             <div className="flex gap-2">

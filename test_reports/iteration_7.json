@@ -1,0 +1,20 @@
+{
+  "summary": "Full backend + frontend E2E validation of new buyer-recap feature (grouping by customer_name). Backend: 12/12 pytest cases PASS in /app/backend/tests/test_buyer_recap.py — shape, forbidden-key recursive scan (no price/cost_price/total_amount/subtotal/profit/unit_price/discount), no 'Rp' in body, group structure ({customer_name, transaction_count, total_quantity, items[]}) with item fields ({product_name, variant, description, sku, quantity}), empty customer_name -> 'Pelanggan Umum', named customers preserved verbatim, same-buyer merges into ONE group, per-buyer (product_name,variant) dedup with summed qty, totals consistency (total_buyers==len(groups), total_items==sum), date filter (2000 window -> 0; wide window == unfiltered), and manual per-buyer aggregation matches the API response exactly. Seed produced 4 buyer groups: Pelanggan Umum(6 txn/12 pcs), Septi(1/2), Septian(1/1), TEST_EDIT(10/14). Frontend: /supplier-recap tree preview (data-testid recap-tree-preview) now L1='REKAP PEMBELI - BekuMart Frozen', L2='Periode: Bulan Ini', L3='Total Item: 29 pcs | Pembeli: 4 | Transaksi: 18'; 4 distinct buyer root lines with '(Nx transaksi, M pcs)' followed by ├──/└── product branches each with 3 children (Jumlah/Variant/Deskripsi) — matches user's requested format. NO 'Rp' anywhere. NO 'Frozen Food Supplier' as root in tree. recap-tree-export-txt downloads 'rekap-supplier-2026-09-02.txt' whose content is byte-identical to preview.textContent. recap-tree-export-pdf downloads 'rekap-supplier-2026-09-02.pdf' with valid '%PDF' magic bytes. Regression: top table (data-testid recap-preview) is still supplier-grouped ('Frozen Food Supplier' header, 29 pcs) as required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_buyer_recap.py", "/app/test_reports/pytest/buyer_recap_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py buyer_recap endpoint is clean: async/await proper, uses projection {_id:0} on both collections, no ObjectId leaks, no monetary keys returned, groups sorted deterministically by customer_name.lower(). Dedup key (product_id, product_name, variant) is correct.",
+    "Edge case (non-blocking): date filter treats created_at as ISO string with $gte/$lte lexical comparison — works for ISO-8601 strings but silently breaks if any transaction stores created_at as native datetime. Consider normalizing on write or coercing here.",
+    "SupplierRecap.jsx treeText correctly memoizes on [buyerData, range, customStart, customEnd, storeName]. Two separate fetches (recap + buyer-recap) fire on filter change — fine for now, could be Promise.all for consistency.",
+    "Reminder from iteration_6: courier PDF font may substitute box-drawing glyphs; long Deskripsi lines may wrap in PDF (splitTextToSize) diverging visually from TXT. Non-blocking."
+  ],
+  "updated_files": ["/app/backend/tests/test_buyer_recap.py"],
+  "success_rate": {"backend": "100% (12/12)", "frontend": "100% (all 11 spec items pass)"},
+  "test_credentials": "mrseptianno@gmail.com / admin123",
+  "seed_data_creation": "None. Used existing seed: 18 txns / 4 unique buyers (Pelanggan Umum, Septi, Septian, TEST_EDIT) / 29 total pcs.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend /api/reports/buyer-recap and /api/reports/supplier-recap coexist correctly. Buyer recap grouped by customer_name; supplier recap unchanged (still grouped by supplier). Frontend SupplierRecap page has two visualizations: top table = supplier-grouped (recap-preview, header 'REKAP KEBUTUHAN RESTOCK'), bottom tree preview = buyer-grouped (recap-tree-preview, header 'REKAP PEMBELI'). TXT/PDF exports use the buyer tree. Reusable regression tests: /app/backend/tests/test_supplier_recap.py + /app/backend/tests/test_buyer_recap.py."
+}
