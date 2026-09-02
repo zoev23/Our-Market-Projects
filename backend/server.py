@@ -798,11 +798,14 @@ async def supplier_recap(
                     "product_id": pid,
                     "product_name": i.get("product_name"),
                     "variant": i.get("variant", ""),
-                    "description": prod.get("description", ""),
+                    "notes": [],
                     "sku": prod.get("sku", ""),
                     "quantity": 0,
                 }
             agg[key]["quantity"] += int(i.get("quantity", 0))
+            note = (i.get("note") or "").strip()
+            if note and note not in agg[key]["notes"]:
+                agg[key]["notes"].append(note)
 
     groups = {}
     for item in agg.values():
@@ -816,7 +819,7 @@ async def supplier_recap(
         groups[sid]["items"].append({
             "product_name": item["product_name"],
             "variant": item["variant"],
-            "description": item["description"],
+            "description": " • ".join(item["notes"]),
             "sku": item["sku"],
             "quantity": item["quantity"],
         })
@@ -871,11 +874,14 @@ async def buyer_recap(
                 buyers[cust]["items_by_key"][key] = {
                     "product_name": i.get("product_name"),
                     "variant": i.get("variant", ""),
-                    "description": prod.get("description", ""),
+                    "notes": [],
                     "sku": prod.get("sku", ""),
                     "quantity": 0,
                 }
             buyers[cust]["items_by_key"][key]["quantity"] += int(i.get("quantity", 0))
+            note = (i.get("note") or "").strip()
+            if note and note not in buyers[cust]["items_by_key"][key]["notes"]:
+                buyers[cust]["items_by_key"][key]["notes"].append(note)
             buyers[cust]["total_quantity"] += int(i.get("quantity", 0))
 
     groups = []
@@ -885,7 +891,16 @@ async def buyer_recap(
             "customer_name": b["customer_name"],
             "transaction_count": b["transaction_count"],
             "total_quantity": b["total_quantity"],
-            "items": items,
+            "items": [
+                {
+                    "product_name": it["product_name"],
+                    "variant": it["variant"],
+                    "description": " • ".join(it["notes"]),
+                    "sku": it["sku"],
+                    "quantity": it["quantity"],
+                }
+                for it in items
+            ],
         })
     groups.sort(key=lambda g: g["customer_name"].lower())
     return {

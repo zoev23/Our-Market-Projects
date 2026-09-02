@@ -102,7 +102,7 @@ export default function SupplierRecap() {
         lines.push(`${branch} ${it.product_name}`);
         lines.push(`${cont}├── Jumlah    : ${it.quantity} pcs`);
         lines.push(`${cont}├── Variant   : ${it.variant || "-"}`);
-        lines.push(`${cont}└── Deskripsi : ${it.description || (it.sku ? `SKU ${it.sku}` : "-")}`);
+        lines.push(`${cont}└── Deskripsi : ${it.description || "-"}`);
       });
     });
     return lines.join("\n");
@@ -241,7 +241,7 @@ export default function SupplierRecap() {
                           <td className="px-3 py-2 font-mono text-xs" style={{ color: "#64748b" }}>{idx + 1}</td>
                           <td className="px-3 py-2 font-medium">{i.product_name}</td>
                           <td className="px-3 py-2">{i.variant || <span style={{ color: "#94a3b8" }}>-</span>}</td>
-                          <td className="px-3 py-2 text-xs" style={{ color: "#64748b" }}>{i.description || (i.sku ? `SKU: ${i.sku}` : "-")}</td>
+                          <td className="px-3 py-2 text-xs" style={{ color: "#64748b" }}>{i.description || "-"}</td>
                           <td className="px-3 py-2 font-mono font-semibold text-right">{i.quantity.toLocaleString("id-ID")}</td>
                         </tr>
                       ))}

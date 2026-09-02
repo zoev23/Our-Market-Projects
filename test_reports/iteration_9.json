@@ -1,0 +1,33 @@
+{
+  "summary": "Verified new 'description from transaction notes' logic. Backend (both /api/reports/buyer-recap and /api/reports/supplier-recap) is 100% correct: descriptions now come exclusively from transaction item.note; unique non-empty notes are joined with ' • '; empty notes yield description=''; no product.description leakage; no price fields leaked. All 5 known seed cases verified (tanpa saus, Tingkat kepedasan sedang, Pedas+Manis, rasa balado, edited). Dynamically POST-ed 2 transactions with different notes on the same (buyer, product, variant) to prove the ' • ' join, plus a 3rd duplicate note to prove uniqueness — both passed. FRONTEND: Regression — SupplierRecap.jsx STILL has SKU fallback in both the tree preview (line 105) and the top 'Detail Produk' table cell (line 244). Confirmed live via Playwright: many rows now display 'SKU CIR-BAK', 'SKU LUM-COK', 'SKU: RIS-MIX' etc. instead of the required '-' dash. This directly contradicts the review's explicit requirement.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "SupplierRecap.jsx treeText (data-testid=recap-tree-preview)", "issue": "Line 105 still has SKU fallback: `it.description || (it.sku ? \\`SKU ${it.sku}\\` : \"-\")`. Should be `it.description || \"-\"` per review. Live tree currently shows lines like 'Deskripsi : SKU LUM-COK' for items without notes.", "selector": "[data-testid=\"recap-tree-preview\"]", "priority": "HIGH"},
+      {"component": "SupplierRecap.jsx top table Detail Produk cell (data-testid=recap-preview)", "issue": "Line 244 still has SKU fallback: `i.description || (i.sku ? \\`SKU: ${i.sku}\\` : \"-\")`. Should be `i.description || \"-\"`. Table currently shows 'SKU: CIR-BAK', 'SKU: RIS-MIX', etc. for empty-note items.", "selector": "[data-testid=\"recap-preview\"] td", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "TXT export", "issue": "Because treeText is used for both preview and TXT export, the SKU fallback also leaks into the exported .txt file — not byte-identical to a notes-only spec.", "affected_selectors": ["[data-testid=\"recap-tree-preview\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_recap_description.py", "/app/test_reports/pytest/recap_desc.xml"],
+  "action_items": [
+    "In /app/frontend/src/pages/SupplierRecap.jsx line 105 change to: `lines.push(\\`${cont}└── Deskripsi : ${it.description || \"-\"}\\`);`",
+    "In /app/frontend/src/pages/SupplierRecap.jsx line 244 change the td to: `{i.description || \"-\"}` (drop the SKU fallback).",
+    "Optional: remove `sku` from the aggregation object since it's no longer displayed anywhere."
+  ],
+  "critical_code_review_comments": [
+    "Main agent's files_of_reference claimed the frontend was already changed to `it.description || '-'`, but the actual deployed code still has the SKU fallback in BOTH places. This is a false-positive claim — please re-apply the frontend edit.",
+    "Backend supplier_recap and buyer_recap correctly build the unique-note list with ' • ' join and correctly ignore product.description. Good implementation.",
+    "Existing seed note for Jhon's Risoles Mayoo is a single stored note '1. Pedas\\n2. Manis' (multiline in one line-item), so it does not go through the ' • ' path — the join was verified separately via a dynamically POST-ed 2-transaction test (TEST_BULLET_JOIN -> 'NoteAlpha • NoteBeta')."
+  ],
+  "updated_files": ["/app/backend/tests/test_recap_description.py"],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "50% — data reaches UI correctly, but empty-note rendering still shows SKU instead of '-'"},
+  "test_credentials": "mrseptianno@gmail.com / admin123",
+  "seed_data_creation": "Created 3 transactions under customer_name='TEST_BULLET_JOIN' (2 with different notes NoteAlpha/NoteBeta, 1 duplicate NoteAlpha) to prove ' • ' join and uniqueness. Safe TEST_ prefix.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend fully verified. Only pending fix is the two SKU-fallback lines in SupplierRecap.jsx (105 and 244). After main agent fixes, re-check that (a) tree lines for buyers Septi and Test Buyer QA show 'Deskripsi : -', (b) top table cells for Bakso Pedas / Jando Pedas / Mix 2 Varian / Coklat Lumer / Mix Gurih / Tiramissu Keju / Coklat Keju (Pelanggan Umum) show '-' instead of 'SKU: ...'.",
+  "rca of the issue": "Frontend fix listed in files_of_reference was not actually committed/deployed. `it.sku` fallback branches on lines 105 and 244 of SupplierRecap.jsx were left intact, so the report UI still renders SKU codes whenever a line-item has no note. Backend is correct; issue is purely a missed frontend edit."
+}
