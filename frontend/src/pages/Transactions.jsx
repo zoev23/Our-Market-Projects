@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import api from "../lib/api";
 import { formatRp, formatDateTime } from "../lib/format";
 import { Input } from "../components/ui/input";
-import { Button } from "../components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
-import { Receipt, Eye, Printer, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Receipt as ReceiptIcon, Eye, Search } from "lucide-react";
+import Receipt from "../components/Receipt";
 
 export default function Transactions() {
   const [items, setItems] = useState([]);
@@ -33,7 +33,7 @@ export default function Transactions() {
 
       {filtered.length === 0 ? (
         <div className="text-center py-16 bg-card border border-border rounded-xl">
-          <Receipt size={40} className="mx-auto text-muted-foreground mb-3" />
+          <ReceiptIcon size={40} className="mx-auto text-muted-foreground mb-3" />
           <p className="text-muted-foreground">Belum ada transaksi.</p>
         </div>
       ) : (
@@ -58,38 +58,9 @@ export default function Transactions() {
       )}
 
       <Dialog open={!!selected} onOpenChange={(v) => !v && setSelected(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Detail Transaksi</DialogTitle></DialogHeader>
-          {selected && settings && (
-            <div className="print-receipt text-xs font-mono bg-white text-black p-4 rounded">
-              <div className="text-center border-b border-dashed border-black pb-2">
-                <div className="font-bold text-sm">{settings.store_name}</div>
-                <div>{settings.address}</div><div>{settings.phone}</div>
-              </div>
-              <div className="py-2 border-b border-dashed border-black">
-                <div>No: {selected.transaction_number}</div>
-                <div>Tgl: {formatDateTime(selected.created_at)}</div>
-              </div>
-              <div className="py-2 border-b border-dashed border-black space-y-1">
-                {selected.items.map((i, idx) => (
-                  <div key={idx}>
-                    <div>{i.product_name} {i.variant && `- ${i.variant}`}</div>
-                    <div className="flex justify-between"><span>{i.quantity} x {formatRp(i.price)}</span><span>{formatRp(i.subtotal)}</span></div>
-                    {i.note && <div className="pl-2 text-[10px] italic">* {i.note}</div>}
-                  </div>
-                ))}
-              </div>
-              <div className="py-2 space-y-0.5">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatRp(selected.subtotal)}</span></div>
-                <div className="flex justify-between"><span>Diskon</span><span>{formatRp(selected.discount)}</span></div>
-                <div className="flex justify-between font-bold"><span>Total</span><span>{formatRp(selected.total_amount)}</span></div>
-                <div className="flex justify-between"><span>{selected.payment_method}</span><span>{formatRp(selected.cash_received)}</span></div>
-                <div className="flex justify-between"><span>Kembali</span><span>{formatRp(selected.change_amount)}</span></div>
-              </div>
-              <div className="pt-2 border-t border-dashed border-black text-center">{settings.receipt_footer}</div>
-            </div>
-          )}
-          <DialogFooter><Button onClick={() => window.print()}><Printer size={16} className="mr-2" />Cetak Ulang</Button></DialogFooter>
+          <Receipt txn={selected} settings={settings} onClose={() => setSelected(null)} showCloseButton />
         </DialogContent>
       </Dialog>
     </div>

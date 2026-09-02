@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { formatErr } from "../lib/api";
-import { formatRp, formatDateTime } from "../lib/format";
+import { formatRp } from "../lib/format";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Textarea } from "../components/ui/textarea";
-import { Plus, Minus, Trash2, Search, Package, Printer, ShoppingCart, StickyNote, Info } from "lucide-react";
+import { Plus, Minus, Trash2, Search, Package, ShoppingCart, StickyNote, Info } from "lucide-react";
 import { toast } from "sonner";
+import Receipt from "../components/Receipt";
 
 export default function POS() {
   const [products, setProducts] = useState([]);
@@ -220,42 +221,9 @@ export default function POS() {
 
       {/* Receipt dialog */}
       <Dialog open={showReceipt} onOpenChange={setShowReceipt}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Struk Transaksi</DialogTitle></DialogHeader>
-          {lastTxn && settings && (
-            <div className="print-receipt text-xs font-mono bg-white text-black p-4 rounded">
-              <div className="text-center border-b border-dashed border-black pb-2">
-                <div className="font-bold text-sm">{settings.store_name}</div>
-                <div>{settings.address}</div>
-                <div>{settings.phone}</div>
-              </div>
-              <div className="py-2 border-b border-dashed border-black">
-                <div>No: {lastTxn.transaction_number}</div>
-                <div>Tgl: {formatDateTime(lastTxn.created_at)}</div>
-              </div>
-              <div className="py-2 border-b border-dashed border-black space-y-1">
-                {lastTxn.items.map((i, idx) => (
-                  <div key={idx}>
-                    <div>{i.product_name} {i.variant && `- ${i.variant}`}</div>
-                    <div className="flex justify-between"><span>{i.quantity} x {formatRp(i.price)}</span><span>{formatRp(i.subtotal)}</span></div>
-                    {i.note && <div className="pl-2 text-[10px] italic">* {i.note}</div>}
-                  </div>
-                ))}
-              </div>
-              <div className="py-2 space-y-0.5">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatRp(lastTxn.subtotal)}</span></div>
-                <div className="flex justify-between"><span>Diskon</span><span>{formatRp(lastTxn.discount)}</span></div>
-                <div className="flex justify-between font-bold"><span>Total</span><span>{formatRp(lastTxn.total_amount)}</span></div>
-                <div className="flex justify-between"><span>{lastTxn.payment_method}</span><span>{formatRp(lastTxn.cash_received)}</span></div>
-                <div className="flex justify-between"><span>Kembali</span><span>{formatRp(lastTxn.change_amount)}</span></div>
-              </div>
-              <div className="pt-2 border-t border-dashed border-black text-center">{settings.receipt_footer}</div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowReceipt(false)}>Tutup</Button>
-            <Button onClick={() => window.print()} data-testid="print-receipt"><Printer size={16} className="mr-2" />Cetak</Button>
-          </DialogFooter>
+          <Receipt txn={lastTxn} settings={settings} onClose={() => setShowReceipt(false)} showCloseButton />
         </DialogContent>
       </Dialog>
     </div>
