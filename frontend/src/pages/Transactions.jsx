@@ -75,6 +75,7 @@ export default function Transactions() {
                   <div key={idx}>
                     <div>{i.product_name} {i.variant && `- ${i.variant}`}</div>
                     <div className="flex justify-between"><span>{i.quantity} x {formatRp(i.price)}</span><span>{formatRp(i.subtotal)}</span></div>
+                    {i.note && <div className="pl-2 text-[10px] italic">* {i.note}</div>}
                   </div>
                 ))}
               </div>

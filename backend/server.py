@@ -138,6 +138,7 @@ class SupplierPriceUpdate(BaseModel):
 class CartItem(BaseModel):
     product_id: str
     quantity: int
+    note: Optional[str] = ""
 
 
 class TransactionIn(BaseModel):
@@ -387,6 +388,7 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
             "cost_price": cost,
             "subtotal": sub,
             "profit": sub - cost_sub,
+            "note": (item.note or "").strip(),
         })
         subtotal += sub
         total_cost += cost_sub
