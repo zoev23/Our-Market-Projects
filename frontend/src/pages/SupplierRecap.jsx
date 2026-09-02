@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import api from "../lib/api";
 import { formatDate } from "../lib/format";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { ClipboardList, Printer, Download, Package } from "lucide-react";
+import { ClipboardList, Printer, Download, Package, FileText, FileType } from "lucide-react";
 import { toast } from "sonner";
 
 const RANGES = {
@@ -17,6 +18,14 @@ const RANGES = {
   last_month: { label: "Bulan Lalu", compute: () => { const now = new Date(); const s = new Date(now.getFullYear(), now.getMonth()-1, 1); const e = new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59); return { start: s.toISOString(), end: e.toISOString() }; } },
   custom: { label: "Custom", compute: () => ({}) },
 };
+
+function rangeLabelStatic(range, customStart, customEnd) {
+  if (range === "custom") {
+    if (!customStart && !customEnd) return "Semua Waktu";
+    return `${customStart ? formatDate(customStart) : "Awal"} - ${customEnd ? formatDate(customEnd) : "Sekarang"}`;
+  }
+  return RANGES[range].label;
+}
 
 export default function SupplierRecap() {
   const [range, setRange] = useState("month");
@@ -70,13 +79,72 @@ export default function SupplierRecap() {
     }, 50);
   };
 
-  const rangeLabel = () => {
-    if (range === "custom") {
-      if (!customStart && !customEnd) return "Semua Waktu";
-      return `${customStart ? formatDate(customStart) : "Awal"} – ${customEnd ? formatDate(customEnd) : "Sekarang"}`;
-    }
-    return RANGES[range].label;
+  const treeText = useMemo(() => {
+    if (!data) return "";
+    const lines = [];
+    lines.push(`REKAP KEBUTUHAN RESTOCK - ${storeName || "Our Project Market"}`);
+    lines.push(`Periode: ${rangeLabelStatic(range, customStart, customEnd)}`);
+    lines.push(`Total Item: ${data.total_items} pcs | Supplier: ${data.total_suppliers} | Transaksi: ${data.transaction_count}`);
+    lines.push("");
+    data.groups.forEach((g, gi) => {
+      if (gi > 0) lines.push("");
+      lines.push(g.supplier_name);
+      g.items.forEach((it, i) => {
+        const isLast = i === g.items.length - 1;
+        const branch = isLast ? "└──" : "├──";
+        const cont = isLast ? "    " : "│   ";
+        lines.push(`${branch} ${it.product_name}`);
+        lines.push(`${cont}├── Jumlah    : ${it.quantity} pcs`);
+        lines.push(`${cont}├── Variant   : ${it.variant || "-"}`);
+        lines.push(`${cont}└── Deskripsi : ${it.description || (it.sku ? `SKU ${it.sku}` : "-")}`);
+      });
+    });
+    return lines.join("\n");
+  }, [data, range, customStart, customEnd, storeName]);
+
+  const dlName = () => `rekap-supplier-${new Date().toISOString().slice(0,10)}`;
+
+  const exportTxt = () => {
+    if (!treeText) return;
+    const blob = new Blob([treeText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.download = `${dlName()}.txt`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Rekap diunduh (TXT)");
   };
+
+  const exportPdf = () => {
+    if (!treeText) return;
+    try {
+      const doc = new jsPDF({ unit: "mm", format: "a4" });
+      doc.setFont("courier", "normal");
+      doc.setFontSize(10);
+      const marginX = 12;
+      const marginY = 15;
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxWidth = doc.internal.pageSize.getWidth() - marginX * 2;
+      const wrapped = doc.splitTextToSize(treeText, maxWidth);
+      let y = marginY;
+      const lineHeight = 4.4;
+      wrapped.forEach((line) => {
+        if (y > pageHeight - marginY) {
+          doc.addPage();
+          y = marginY;
+        }
+        doc.text(line, marginX, y);
+        y += lineHeight;
+      });
+      doc.save(`${dlName()}.pdf`);
+      toast.success("Rekap diunduh (PDF)");
+    } catch (e) {
+      toast.error("Gagal membuat PDF");
+    }
+  };
+
+  const rangeLabel = () => rangeLabelStatic(range, customStart, customEnd);
 
   return (
     <div className="space-y-4" data-testid="supplier-recap-page">
@@ -86,6 +154,8 @@ export default function SupplierRecap() {
           <p className="text-sm text-muted-foreground mt-1">Rekap kebutuhan restock untuk dikirim ke supplier — tanpa harga.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={exportTxt} data-testid="recap-export-txt"><FileText size={15} className="mr-1.5" />TXT</Button>
+          <Button variant="outline" onClick={exportPdf} data-testid="recap-export-pdf"><FileType size={15} className="mr-1.5" />PDF</Button>
           <Button variant="outline" onClick={() => exportImage("jpg")} data-testid="recap-export-jpg"><Download size={15} className="mr-1.5" />JPG</Button>
           <Button variant="outline" onClick={() => exportImage("png")} data-testid="recap-export-png"><Download size={15} className="mr-1.5" />PNG</Button>
           <Button onClick={handlePrint} data-testid="recap-print"><Printer size={15} className="mr-1.5" />Cetak</Button>
@@ -179,6 +249,22 @@ export default function SupplierRecap() {
           <div className="pt-3 text-xs italic text-center" style={{ borderTop: "1px solid #e2e8f0", color: "#64748b" }}>
             Dokumen rekap ini otomatis dihasilkan oleh sistem {storeName || "Our Project Market"} — tanpa mencantumkan harga.
           </div>
+        </div>
+      )}
+
+      {data && data.groups.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4 sm:p-5">
+          <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold">Format Teks Terstruktur</div>
+              <div className="text-xs text-muted-foreground">Preview persis seperti hasil export TXT/PDF.</div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={exportTxt} data-testid="recap-tree-export-txt"><FileText size={14} className="mr-1.5" />Unduh TXT</Button>
+              <Button variant="outline" size="sm" onClick={exportPdf} data-testid="recap-tree-export-pdf"><FileType size={14} className="mr-1.5" />Unduh PDF</Button>
+            </div>
+          </div>
+          <pre data-testid="recap-tree-preview" className="text-xs sm:text-sm font-mono bg-secondary/40 border border-border rounded-lg p-3 sm:p-4 overflow-x-auto whitespace-pre leading-relaxed">{treeText}</pre>
         </div>
       )}
     </div>

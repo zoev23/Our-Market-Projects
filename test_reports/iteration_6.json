@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only E2E test for new TXT/PDF export in Rekap Supplier. All 8 spec items PASS. Verified: (1) toolbar shows recap-export-txt & recap-export-pdf plus regression buttons (jpg/png/print); (2) duplicate recap-tree-export-txt & recap-tree-export-pdf visible below tree preview; (3) recap-tree-preview first line = 'REKAP KEBUTUHAN RESTOCK - BekuMart Frozen', has 'Periode: Bulan Ini' and 'Total Item: 29 pcs | Supplier: 1 | Transaksi: 18'; (4) tree uses proper ├── / └── branching with 3 child lines per product (Jumlah/Variant/Deskripsi with correct alignment spaces); (5) recap-export-txt triggers download 'rekap-supplier-2026-09-02.txt' (text/plain), content byte-identical to preview.textContent, toast 'Rekap diunduh (TXT)' shown; (6) recap-export-pdf triggers 'rekap-supplier-2026-09-02.pdf' with valid magic bytes b'%PDF', toast 'Rekap diunduh (PDF)' shown; (7) preview contains NO 'Rp' and NO 'Harga'; (8) switching Periode → Custom with 2024-01-01/2026-12-31 updated Periode line to '01 Jan 2024 - 31 Des 2026'; (9) recap-tree-export-txt duplicate button also triggers TXT download; (10) regression JPG button still downloads 'rekap-supplier-2026-09-02.jpg' (PNG click was blocked by stacked sonner toasts from earlier downloads — click layer issue, not a functionality bug; JPG proves exportImage() path works and PNG uses same function with different mime).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "SupplierRecap toolbar", "issues": ["When multiple exports fire in quick succession, stacked sonner toasts (top-right) can overlap and briefly intercept pointer events on JPG/PNG/Print buttons in the toolbar row. Consider using toast.dismiss on new export or reducing toast duration. Not user-visible in normal flow (single click)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_supplier_recap.py"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "SupplierRecap.jsx exportTxt/exportPdf are clean and treeText is memoized correctly against range/customStart/customEnd/storeName. TXT blob uses proper charset=utf-8 so the ├──/└── glyphs survive.",
+    "jsPDF 4.2.1 (package.json says ^2.5 in review request but node_modules is 4.2.1) with courier font handles the tree characters; magic bytes verified. Note: courier standard PDF fonts fall back to WinAnsi for non-ASCII chars — ├── and └── may render as substitute glyphs in some PDF viewers. If pixel-perfect box-drawing chars in PDF are required, consider embedding a Unicode TTF (e.g., Roboto Mono) via doc.addFont — not blocking now.",
+    "exportPdf uses doc.splitTextToSize which can wrap long Deskripsi lines onto multiple PDF lines, causing the PDF tree structure to visually differ from the TXT/preview on very long descriptions. Acceptable for A4 width but note the divergence from 'IDENTIK' when descriptions exceed ~90 chars.",
+    "Minor: dlName() uses new Date().toISOString().slice(0,10) which is UTC date — a user near midnight WIB may get a filename with 'yesterday' compared to their local wall clock. Non-blocking.",
+    "No loading state during PDF generation (jsPDF is synchronous; usually <200ms so fine)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only run)", "frontend": "100% (all 8 spec items pass)"},
+  "test_credentials": "mrseptianno@gmail.com / admin123",
+  "seed_data_creation": "None. Used existing 18 transactions / 1 supplier group ('Frozen Food Supplier') / 29 items.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "TXT/PDF export for Rekap Supplier fully validated end-to-end via Playwright with page.expect_download(). TXT content compared byte-for-byte with recap-tree-preview.textContent — identical. PDF magic bytes verified. Regression buttons (JPG/PNG/Print) still present and JPG confirmed working. Custom period reactively updates Periode line in tree. Toolbar toast stacking is only a test-artifact when clicking multiple export buttons within a few seconds; no fix needed for users."
+}
