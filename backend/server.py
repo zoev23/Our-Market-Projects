@@ -481,6 +481,36 @@ async def get_transaction(tid: str, user=Depends(get_current_user)):
     return doc
 
 
+@api.delete("/transactions/{tid}")
+async def delete_transaction(tid: str, user=Depends(get_current_user)):
+    old = await db.transactions.find_one({"id": tid})
+    if not old:
+        raise HTTPException(404, "Transaksi tidak ditemukan")
+    # Restore stock for each item and log to inventory_history
+    txn_number = old.get("transaction_number", tid)
+    for i in old.get("items", []):
+        pid = i.get("product_id")
+        qty = int(i.get("quantity", 0))
+        if not pid or qty <= 0:
+            continue
+        prod = await db.products.find_one({"id": pid})
+        if prod:
+            await db.products.update_one({"id": pid}, {"$inc": {"stock": qty}, "$set": {"updated_at": now_iso()}})
+            await db.inventory_history.insert_one({
+                "id": new_id(),
+                "product_id": pid,
+                "product_name": prod.get("name"),
+                "variant": prod.get("variant"),
+                "type": "delete",
+                "quantity": qty,
+                "reason": f"Hapus transaksi {txn_number}",
+                "created_at": now_iso(),
+                "user_email": user["email"],
+            })
+    await db.transactions.delete_one({"id": tid})
+    return {"ok": True, "restored_items": len(old.get("items", []))}
+
+
 @api.put("/transactions/{tid}")
 async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get_current_user)):
     old = await db.transactions.find_one({"id": tid})

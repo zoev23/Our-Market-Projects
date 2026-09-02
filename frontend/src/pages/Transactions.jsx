@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Receipt as ReceiptIcon, Eye, Search, Pencil, Plus, Minus, Trash2 } from "lucide-react";
 import Receipt from "../components/Receipt";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
 
 export default function Transactions() {
@@ -18,6 +19,8 @@ export default function Transactions() {
   const [settings, setSettings] = useState(null);
   const [editing, setEditing] = useState(null); // form state
   const [saving, setSaving] = useState(false);
+  const [deletingTxn, setDeletingTxn] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = () => api.get("/transactions").then((r) => setItems(r.data));
   useEffect(() => {
@@ -80,6 +83,19 @@ export default function Transactions() {
     } finally { setSaving(false); }
   };
 
+  const doDelete = async () => {
+    if (!deletingTxn) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/transactions/${deletingTxn.id}`);
+      toast.success("Transaksi berhasil dihapus, stok dikembalikan");
+      setDeletingTxn(null);
+      load();
+    } catch (e) {
+      toast.error(formatErr(e.response?.data?.detail) || "Gagal menghapus");
+    } finally { setDeleting(false); }
+  };
+
   return (
     <div className="space-y-4" data-testid="transactions-page">
       <div>
@@ -117,6 +133,7 @@ export default function Transactions() {
                     <div className="flex justify-end gap-1">
                       <button onClick={() => setSelected(t)} className="p-1.5 hover:bg-secondary rounded" data-testid={`txn-view-${t.id}`} title="Lihat struk"><Eye size={14} /></button>
                       <button onClick={() => openEdit(t)} className="p-1.5 hover:bg-secondary rounded text-primary" data-testid={`txn-edit-${t.id}`} title="Edit transaksi"><Pencil size={14} /></button>
+                      <button onClick={() => setDeletingTxn(t)} className="p-1.5 hover:bg-destructive/10 rounded text-destructive" data-testid={`txn-delete-${t.id}`} title="Hapus transaksi"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -223,6 +240,24 @@ export default function Transactions() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deletingTxn} onOpenChange={(v) => !v && setDeletingTxn(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus transaksi {deletingTxn?.transaction_number}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Transaksi ini akan dihapus permanen. Stok untuk {deletingTxn?.items?.length || 0} produk akan dikembalikan otomatis dan tercatat di Riwayat Stok. Tindakan ini tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="delete-cancel">Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={doDelete} disabled={deleting} data-testid="delete-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? "Menghapus..." : "Ya, Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

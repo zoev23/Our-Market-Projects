@@ -1,0 +1,29 @@
+{
+  "summary": "Verified new DELETE /api/transactions/{tid} feature end-to-end. Backend (3/3 pytest): (a) creating a TEST_UI/TEST_DELETE transaction decrements stock, DELETE returns {ok:true, restored_items:2}, product stock is incremented back to exact pre-sale value via $inc, transaction is gone (subsequent GET => 404), and inventory_history gains one row per item with type='delete', quantity=+sold_qty, reason='Hapus transaksi TRX-...'; (b) DELETE on unknown id => 404 with detail 'Transaksi tidak ditemukan'; (c) regression: GET /api/reports/buyer-recap contains no price/subtotal/total/cost/profit/discount fields anywhere in the tree. Frontend (Playwright, full flow): red Trash2 icon renders with data-testid=txn-delete-<id> next to eye+pencil for every row; clicking opens shadcn AlertDialog titled 'Hapus transaksi TRX-20260902-00026?' with body mentioning stock restore + '2 produk'; 'Batal' (delete-cancel) closes dialog with row intact; 'Ya, Hapus' (delete-confirm) calls the API, shows green toast 'Transaksi berhasil dihapus, stok dikembalikan', dialog closes, the row disappears from the list, and product stock returns to pre-sale values (12 and 13 restored exactly).",
+  "backend_issues": {"critical": [], "minor": [
+    {"endpoint": "POST /api/transactions", "issue": "transaction_number is generated as `TRX-YYYYMMDD-<count_documents+1>`. Because the counter is based on current collection size, deleting a transaction lets the NEXT insert reuse a previously-used TRX-... number. Not part of this task, but it can cause duplicate transaction_numbers and confused audit/inventory-history reasons over time. Consider using a monotonically increasing sequence (e.g. findAndModify counter doc) or max(existing_number)+1."}
+  ]},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_transaction_delete.py",
+    "/app/test_reports/pytest/delete_txn.xml"
+  ],
+  "action_items": [
+    "(Optional, not blocking this task) Fix transaction_number generation to avoid reuse after delete — see minor backend issue.",
+    "Still pending from iteration_9 (unrelated to this task): SupplierRecap.jsx lines 105 & 244 still contain SKU fallback instead of '-' for empty descriptions — was not part of this review request but remains open."
+  ],
+  "critical_code_review_comments": [
+    "delete_transaction endpoint correctly uses $inc for stock restore (atomic), logs inventory_history per line with type='delete' and reason=`Hapus transaksi {txn_number}`, and returns {ok, restored_items}. Auth is enforced via get_current_user. Good.",
+    "Frontend uses shadcn AlertDialog with proper data-testids (txn-delete-<id>, delete-cancel, delete-confirm) and a clean doDelete() handler with loading state and error toast fallback.",
+    "Minor: no admin-only guard on DELETE — any authenticated user (including future cashier role if added) can delete transactions and restore stock. Consider role check if multi-role is planned.",
+    "Minor: transaction_number reuse bug (see backend minor issue above) is triggered specifically by this new delete feature — worth an inline comment in delete_transaction or a fix to generation."
+  ],
+  "updated_files": ["/app/backend/tests/test_transaction_delete.py"],
+  "success_rate": {"backend": "100% (3/3)", "frontend": "100% (all delete flows + cancel + toast + stock restore)"},
+  "test_credentials": "mrseptianno@gmail.com / admin123",
+  "seed_data_creation": "Created two throwaway transactions with customer_name='TEST_DELETE_<hex>' and 'TEST_UI_DELETE' — both were deleted at the end of their respective tests. No production-looking data touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New DELETE /api/transactions/{tid} feature fully verified backend+frontend. Regression: buyer-recap still has no price fields (good). Two open items unrelated to this task: (1) SupplierRecap.jsx SKU fallback still present per iteration_9, (2) transaction_number can be reused after delete (minor). Test file: /app/backend/tests/test_transaction_delete.py. Filter inventory-history entries by (reason, product_id in set) — not just reason — because txn numbers can collide after deletes.",
+  "rca of the issue": "N/A — no bug in the requested feature. Optional finding: TRX number reuse post-delete is caused by using count_documents()+1 in server.py line 434."
+}
