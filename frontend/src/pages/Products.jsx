@@ -8,7 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Search, Package } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, ArrowDownWideNarrow } from "lucide-react";
 import { toast } from "sonner";
 
 const empty = { name: "", variant: "", category_id: "", supplier_id: "", cost_price: 0, selling_price: 0, stock: 0, minimum_stock: 5, sku: "", status: "active", description: "" };
@@ -19,6 +19,7 @@ export default function Products() {
   const [sups, setSups] = useState([]);
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
+  const [sort, setSort] = useState("name_asc");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
@@ -31,11 +32,23 @@ export default function Products() {
   };
   useEffect(load, []);
 
-  const filtered = useMemo(() => items.filter((p) => {
-    if (catFilter !== "all" && p.category_id !== catFilter) return false;
-    if (search && !(`${p.name} ${p.variant} ${p.sku}`.toLowerCase().includes(search.toLowerCase()))) return false;
-    return true;
-  }), [items, catFilter, search]);
+  const filtered = useMemo(() => {
+    const list = items.filter((p) => {
+      if (catFilter !== "all" && p.category_id !== catFilter) return false;
+      if (search && !(`${p.name} ${p.variant} ${p.sku}`.toLowerCase().includes(search.toLowerCase()))) return false;
+      return true;
+    });
+    const s = [...list];
+    switch (sort) {
+      case "name_desc": s.sort((a, b) => (b.name + b.variant).localeCompare(a.name + a.variant)); break;
+      case "price_desc": s.sort((a, b) => (b.selling_price || 0) - (a.selling_price || 0)); break;
+      case "price_asc": s.sort((a, b) => (a.selling_price || 0) - (b.selling_price || 0)); break;
+      case "stock_desc": s.sort((a, b) => (b.stock || 0) - (a.stock || 0)); break;
+      case "stock_asc": s.sort((a, b) => (a.stock || 0) - (b.stock || 0)); break;
+      default: s.sort((a, b) => (a.name + a.variant).localeCompare(b.name + b.variant));
+    }
+    return s;
+  }, [items, catFilter, search, sort]);
 
   const openAdd = () => { setEditing(null); setForm(empty); setOpen(true); };
   const openEdit = (p) => { setEditing(p); setForm({ ...empty, ...p }); setOpen(true); };
@@ -74,9 +87,23 @@ export default function Products() {
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama, varian, SKU..." className="pl-9" />
         </div>
         <Select value={catFilter} onValueChange={setCatFilter}>
-          <SelectTrigger className="sm:w-56"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="sm:w-48"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="all">Semua Kategori</SelectItem>{cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
         </Select>
+        <div className="flex items-center gap-2">
+          <ArrowDownWideNarrow size={14} className="text-muted-foreground" />
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="sm:w-48" data-testid="product-sort"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name_asc">Nama A-Z</SelectItem>
+              <SelectItem value="name_desc">Nama Z-A</SelectItem>
+              <SelectItem value="price_asc">Harga (murah)</SelectItem>
+              <SelectItem value="price_desc">Harga (mahal)</SelectItem>
+              <SelectItem value="stock_desc">Stok (banyak)</SelectItem>
+              <SelectItem value="stock_asc">Stok (sedikit)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {filtered.length === 0 ? (

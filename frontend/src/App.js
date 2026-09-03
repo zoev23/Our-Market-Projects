@@ -10,7 +10,6 @@ import POS from "./pages/POS";
 import Products from "./pages/Products";
 import Inventory from "./pages/Inventory";
 import Suppliers from "./pages/Suppliers";
-import SupplierPrices from "./pages/SupplierPrices";
 import Transactions from "./pages/Transactions";
 import Reports from "./pages/Reports";
 import Cashflow from "./pages/Cashflow";
@@ -32,7 +31,6 @@ function App() {
               <Route path="/products" element={<Products />} />
               <Route path="/inventory" element={<Inventory />} />
               <Route path="/suppliers" element={<Suppliers />} />
-              <Route path="/supplier-prices" element={<SupplierPrices />} />
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/supplier-recap" element={<SupplierRecap />} />

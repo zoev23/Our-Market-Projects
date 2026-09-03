@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import api, { formatErr } from "../lib/api";
 import { formatRp, formatDateTime } from "../lib/format";
+import * as XLSX from "xlsx";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
-import { Receipt as ReceiptIcon, Eye, Search, Pencil, Plus, Minus, Trash2 } from "lucide-react";
+import { Receipt as ReceiptIcon, Eye, Search, Pencil, Plus, Minus, Trash2, FileSpreadsheet, ArrowDownWideNarrow } from "lucide-react";
 import Receipt from "../components/Receipt";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -21,6 +22,7 @@ export default function Transactions() {
   const [saving, setSaving] = useState(false);
   const [deletingTxn, setDeletingTxn] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [sort, setSort] = useState("date_desc");
 
   const load = () => api.get("/transactions").then((r) => setItems(r.data));
   useEffect(() => {
@@ -29,6 +31,55 @@ export default function Transactions() {
   }, []);
 
   const filtered = items.filter((t) => !search || `${t.transaction_number} ${t.customer_name || ""}`.toLowerCase().includes(search.toLowerCase()));
+
+  const sorted = useMemo(() => {
+    const s = [...filtered];
+    switch (sort) {
+      case "date_asc": s.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || "")); break;
+      case "total_desc": s.sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0)); break;
+      case "total_asc": s.sort((a, b) => (a.total_amount || 0) - (b.total_amount || 0)); break;
+      case "customer": s.sort((a, b) => (a.customer_name || "").localeCompare(b.customer_name || "")); break;
+      default: s.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    }
+    return s;
+  }, [filtered, sort]);
+
+  const exportExcel = () => {
+    const rows = [];
+    sorted.forEach((t) => {
+      const base = {
+        "No Transaksi": t.transaction_number,
+        "Tanggal": formatDateTime(t.created_at),
+        "Pelanggan": t.customer_name || "-",
+        "Metode Bayar": t.payment_method,
+        "Kasir": t.cashier_email,
+      };
+      t.items.forEach((i) => {
+        rows.push({
+          ...base,
+          "Produk": i.product_name,
+          "Varian": i.variant || "",
+          "Catatan": i.note || "",
+          "Qty": i.quantity,
+          "Harga": i.price,
+          "Subtotal": i.subtotal,
+          "Diskon Transaksi": t.discount,
+          "Total Transaksi": t.total_amount,
+          "Laba Transaksi": t.profit,
+        });
+      });
+      if (t.items.length === 0) rows.push({ ...base, "Produk": "-", "Total Transaksi": t.total_amount });
+    });
+    if (rows.length === 0) { toast.error("Tidak ada transaksi untuk diekspor"); return; }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // auto width
+    const cols = Object.keys(rows[0]).map((k) => ({ wch: Math.min(30, Math.max(k.length + 2, ...rows.map((r) => String(r[k] ?? "").length + 2))) }));
+    ws["!cols"] = cols;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Transaksi");
+    XLSX.writeFile(wb, `transaksi-${new Date().toISOString().slice(0,10)}.xlsx`);
+    toast.success(`Excel diunduh (${rows.length} baris)`);
+  };
 
   const openEdit = (t) => {
     setEditing({
@@ -99,16 +150,36 @@ export default function Transactions() {
   return (
     <div className="space-y-4" data-testid="transactions-page">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Riwayat Transaksi</h1>
-        <p className="text-sm text-muted-foreground mt-1">Semua transaksi penjualan. Klik ikon pensil untuk mengedit detail.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Riwayat Transaksi</h1>
+            <p className="text-sm text-muted-foreground mt-1">Semua transaksi penjualan. Klik ikon pensil untuk mengedit detail.</p>
+          </div>
+          <Button variant="outline" onClick={exportExcel} data-testid="txn-export-excel"><FileSpreadsheet size={16} className="mr-1.5" />Export Excel</Button>
+        </div>
       </div>
 
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari no. transaksi atau pelanggan..." className="pl-9" />
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari no. transaksi atau pelanggan..." className="pl-9" />
+        </div>
+        <div className="flex items-center gap-2">
+          <ArrowDownWideNarrow size={14} className="text-muted-foreground" />
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="sm:w-56" data-testid="txn-sort"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date_desc">Tanggal (terbaru)</SelectItem>
+              <SelectItem value="date_asc">Tanggal (terlama)</SelectItem>
+              <SelectItem value="total_desc">Total (terbesar)</SelectItem>
+              <SelectItem value="total_asc">Total (terkecil)</SelectItem>
+              <SelectItem value="customer">Pelanggan A-Z</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <div className="text-center py-16 bg-card border border-border rounded-xl">
           <ReceiptIcon size={40} className="mx-auto text-muted-foreground mb-3" />
           <p className="text-muted-foreground">Belum ada transaksi.</p>
@@ -116,15 +187,17 @@ export default function Transactions() {
       ) : (
         <div className="bg-card border border-border rounded-xl overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-secondary/50"><tr className="text-left"><th className="px-4 py-3 font-medium">No. Transaksi</th><th className="px-4 py-3 font-medium">Tanggal</th><th className="px-4 py-3 font-medium">Item</th><th className="px-4 py-3 font-medium">Pembayaran</th><th className="px-4 py-3 font-medium">Total</th><th className="px-4 py-3 font-medium">Laba</th><th className="px-4 py-3 font-medium text-right">Aksi</th></tr></thead>
+            <thead className="bg-secondary/50"><tr className="text-left"><th className="px-4 py-3 font-medium">No. Transaksi</th><th className="px-4 py-3 font-medium">Tanggal</th><th className="px-4 py-3 font-medium">Pelanggan</th><th className="px-4 py-3 font-medium">Item</th><th className="px-4 py-3 font-medium">Pembayaran</th><th className="px-4 py-3 font-medium">Total</th><th className="px-4 py-3 font-medium">Laba</th><th className="px-4 py-3 font-medium text-right">Aksi</th></tr></thead>
             <tbody>
-              {filtered.map((t) => (
+              {sorted.map((t) => (
                 <tr key={t.id} className="border-t border-border">
                   <td className="px-4 py-3 font-mono text-xs">
                     {t.transaction_number}
                     {t.edited_by && <div className="text-[10px] text-amber-500 mt-0.5">diedit</div>}
+                    {t.source === "whatsapp" && <div className="text-[10px] text-emerald-500 mt-0.5">via WA</div>}
                   </td>
                   <td className="px-4 py-3 text-xs">{formatDateTime(t.created_at)}</td>
+                  <td className="px-4 py-3 text-xs">{t.customer_name || <span className="text-muted-foreground">-</span>}</td>
                   <td className="px-4 py-3">{t.items.reduce((s, i) => s + i.quantity, 0)}</td>
                   <td className="px-4 py-3"><span className="text-xs bg-secondary px-2 py-0.5 rounded">{t.payment_method}</span></td>
                   <td className="px-4 py-3 font-mono font-semibold">{formatRp(t.total_amount)}</td>

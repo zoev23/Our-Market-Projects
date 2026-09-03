@@ -179,6 +179,13 @@ class ExpenseIn(BaseModel):
     date: Optional[str] = None
 
 
+class IncomeIn(BaseModel):
+    category: str
+    description: Optional[str] = ""
+    amount: float
+    date: Optional[str] = None
+
+
 class SettingsIn(BaseModel):
     store_name: Optional[str] = None
     address: Optional[str] = None
@@ -651,6 +658,30 @@ async def create_expense(body: ExpenseIn, user=Depends(get_current_user)):
 @api.delete("/expenses/{eid}")
 async def delete_expense(eid: str, user=Depends(get_current_user)):
     await db.expenses.delete_one({"id": eid})
+    return {"ok": True}
+
+
+# ---------- Incomes (manual) ----------
+@api.get("/incomes")
+async def list_incomes(user=Depends(get_current_user)):
+    return await db.incomes.find({}, {"_id": 0}).sort("date", -1).to_list(1000)
+
+
+@api.post("/incomes")
+async def create_income(body: IncomeIn, user=Depends(get_current_user)):
+    doc = body.model_dump()
+    doc["id"] = new_id()
+    doc["date"] = doc.get("date") or now_iso()
+    doc["created_at"] = now_iso()
+    doc["user_email"] = user["email"]
+    await db.incomes.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@api.delete("/incomes/{iid}")
+async def delete_income(iid: str, user=Depends(get_current_user)):
+    await db.incomes.delete_one({"id": iid})
     return {"ok": True}
 
 
@@ -1165,10 +1196,15 @@ async def buyer_recap(
 async def cashflow_summary(user=Depends(get_current_user)):
     txns = await db.transactions.find({}, {"_id": 0}).to_list(5000)
     expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
-    total_income = sum(t.get("total_amount", 0) for t in txns)
+    incomes = await db.incomes.find({}, {"_id": 0}).to_list(2000)
+    total_income_sales = sum(t.get("total_amount", 0) for t in txns)
+    total_income_manual = sum(i.get("amount", 0) for i in incomes)
+    total_income = total_income_sales + total_income_manual
     total_expense = sum(e.get("amount", 0) for e in expenses)
     return {
         "total_income": total_income,
+        "total_income_sales": total_income_sales,
+        "total_income_manual": total_income_manual,
         "total_expense": total_expense,
         "net_cashflow": total_income - total_expense,
     }

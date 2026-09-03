@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
+import { ArrowDownWideNarrow } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Inventory() {
@@ -14,6 +15,7 @@ export default function Inventory() {
   const [history, setHistory] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [tab, setTab] = useState("stock");
+  const [sort, setSort] = useState("name_asc");
   const [adjOpen, setAdjOpen] = useState(false);
   const [adjForm, setAdjForm] = useState({ product_id: "", quantity: 0, reason: "Restock", notes: "" });
 
@@ -33,6 +35,17 @@ export default function Inventory() {
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
 
+  const sortedProducts = (() => {
+    const s = [...products];
+    switch (sort) {
+      case "name_desc": s.sort((a, b) => (b.name + b.variant).localeCompare(a.name + a.variant)); break;
+      case "stock_desc": s.sort((a, b) => (b.stock || 0) - (a.stock || 0)); break;
+      case "stock_asc": s.sort((a, b) => (a.stock || 0) - (b.stock || 0)); break;
+      default: s.sort((a, b) => (a.name + a.variant).localeCompare(b.name + b.variant));
+    }
+    return s;
+  })();
+
   const status = (p) => {
     if (p.stock <= 0) return { label: "Habis", cls: "bg-destructive/10 text-destructive" };
     if (p.stock <= p.minimum_stock) return { label: "Stok Menipis", cls: "bg-amber-500/10 text-amber-500" };
@@ -46,9 +59,25 @@ export default function Inventory() {
         <p className="text-sm text-muted-foreground mt-1">Pantau dan sesuaikan stok produk.</p>
       </div>
 
-      <div className="flex gap-1 border-b border-border">
-        <button onClick={() => setTab("stock")} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === "stock" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}>Stok</button>
-        <button onClick={() => setTab("history")} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === "history" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}>Riwayat</button>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex gap-1 border-b border-border">
+          <button onClick={() => setTab("stock")} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === "stock" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}>Stok</button>
+          <button onClick={() => setTab("history")} className={`px-4 py-2 text-sm font-medium border-b-2 ${tab === "history" ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}>Riwayat</button>
+        </div>
+        {tab === "stock" && (
+          <div className="flex items-center gap-2">
+            <ArrowDownWideNarrow size={14} className="text-muted-foreground" />
+            <Select value={sort} onValueChange={setSort}>
+              <SelectTrigger className="w-48" data-testid="inv-sort"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name_asc">Nama A-Z</SelectItem>
+                <SelectItem value="name_desc">Nama Z-A</SelectItem>
+                <SelectItem value="stock_desc">Stok (banyak)</SelectItem>
+                <SelectItem value="stock_asc">Stok (sedikit)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {tab === "stock" ? (
@@ -66,7 +95,7 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody>
-              {products.map((p) => {
+              {sortedProducts.map((p) => {
                 const st = status(p);
                 const sup = suppliers.find((s) => s.id === p.supplier_id);
                 return (

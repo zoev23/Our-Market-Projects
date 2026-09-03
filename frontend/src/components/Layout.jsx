@@ -1,25 +1,45 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, FileSpreadsheet, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, X, ClipboardList } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, ClipboardList } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { Button } from "./ui/button";
 
-const menu = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
-  { to: "/pos", label: "POS / Kasir", icon: ShoppingCart, id: "pos" },
-  { to: "/products", label: "Produk", icon: Package, id: "products" },
-  { to: "/inventory", label: "Stok", icon: Boxes, id: "inventory" },
-  { to: "/suppliers", label: "Supplier", icon: Users, id: "suppliers" },
-  { to: "/supplier-prices", label: "Price List Supplier", icon: FileSpreadsheet, id: "supplier-prices" },
-  { to: "/transactions", label: "Transaksi", icon: Receipt, id: "transactions" },
-  { to: "/reports", label: "Laporan", icon: BarChart3, id: "reports" },
-  { to: "/supplier-recap", label: "Rekap Supplier", icon: ClipboardList, id: "supplier-recap" },
-  { to: "/cashflow", label: "Cashflow", icon: Wallet, id: "cashflow" },
-  { to: "/settings", label: "Pengaturan", icon: Settings, id: "settings" },
+const groups = [
+  {
+    title: "Utama",
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
+      { to: "/pos", label: "POS / Kasir", icon: ShoppingCart, id: "pos" },
+    ],
+  },
+  {
+    title: "Katalog",
+    items: [
+      { to: "/products", label: "Produk", icon: Package, id: "products" },
+      { to: "/inventory", label: "Stok", icon: Boxes, id: "inventory" },
+      { to: "/suppliers", label: "Supplier", icon: Users, id: "suppliers" },
+    ],
+  },
+  {
+    title: "Keuangan",
+    items: [
+      { to: "/transactions", label: "Transaksi", icon: Receipt, id: "transactions" },
+      { to: "/cashflow", label: "Cashflow", icon: Wallet, id: "cashflow" },
+      { to: "/reports", label: "Laporan", icon: BarChart3, id: "reports" },
+      { to: "/supplier-recap", label: "Rekap Supplier", icon: ClipboardList, id: "supplier-recap" },
+    ],
+  },
+  {
+    title: "Sistem",
+    items: [
+      { to: "/settings", label: "Pengaturan", icon: Settings, id: "settings" },
+    ],
+  },
 ];
 
-const bottomMenu = menu.slice(0, 5);
+const flat = groups.flatMap((g) => g.items);
+const bottomMenu = [flat[0], flat[1], flat[2], flat[5], flat[8]]; // Dashboard, POS, Products, Transactions, Reports
 
 export default function Layout() {
   const { logout, user } = useAuth();
@@ -40,23 +60,30 @@ export default function Layout() {
           </div>
         </div>
       </div>
-      <nav className="flex-1 px-3 py-4 overflow-y-auto no-scrollbar space-y-1">
-        {menu.map((m) => (
-          <NavLink
-            key={m.id}
-            to={m.to}
-            end={m.to === "/"}
-            onClick={onClick}
-            data-testid={`nav-${m.id}`}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive ? "bg-primary text-primary-foreground" : "text-foreground/70 hover:bg-secondary hover:text-foreground"
-              }`
-            }
-          >
-            <m.icon size={18} />
-            <span>{m.label}</span>
-          </NavLink>
+      <nav className="flex-1 px-3 py-4 overflow-y-auto no-scrollbar space-y-4">
+        {groups.map((g) => (
+          <div key={g.title}>
+            <div className="px-3 pb-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-semibold">{g.title}</div>
+            <div className="space-y-1">
+              {g.items.map((m) => (
+                <NavLink
+                  key={m.id}
+                  to={m.to}
+                  end={m.to === "/"}
+                  onClick={onClick}
+                  data-testid={`nav-${m.id}`}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      isActive ? "bg-primary text-primary-foreground" : "text-foreground/70 hover:bg-secondary hover:text-foreground"
+                    }`
+                  }
+                >
+                  <m.icon size={18} />
+                  <span>{m.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
       <div className="p-3 border-t border-border space-y-1">
@@ -75,12 +102,10 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
-      {/* Desktop sidebar */}
       <aside className="hidden lg:flex w-64 flex-col border-r border-border bg-card fixed inset-y-0">
         <SideContent />
       </aside>
 
-      {/* Mobile drawer */}
       {open && (
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div className="w-64 bg-card border-r border-border"><SideContent onClick={() => setOpen(false)} /></div>
@@ -89,7 +114,6 @@ export default function Layout() {
       )}
 
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
-        {/* Mobile top bar */}
         <header className="lg:hidden sticky top-0 z-30 bg-card border-b border-border px-4 h-14 flex items-center justify-between">
           <Button variant="ghost" size="icon" onClick={() => setOpen(true)} data-testid="mobile-menu-btn"><Menu size={22} /></Button>
           <div className="font-bold tracking-tight">Our Project Market</div>
@@ -100,7 +124,6 @@ export default function Layout() {
 
         <main className="flex-1 p-4 sm:p-6 pb-24 lg:pb-6"><Outlet /></main>
 
-        {/* Mobile bottom nav */}
         <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-border grid grid-cols-5">
           {bottomMenu.map((m) => (
             <NavLink key={m.id} to={m.to} end={m.to === "/"} data-testid={`bottom-nav-${m.id}`}
