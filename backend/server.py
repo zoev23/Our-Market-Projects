@@ -543,66 +543,109 @@ async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get
     old = await db.transactions.find_one({"id": tid})
     if not old:
         raise HTTPException(404, "Transaksi tidak ditemukan")
-    # Only allow editing existing items (qty>0 keeps; qty<=0 removes). No adding new products here.
+
+    # Keep only items with qty > 0. Existing items may be changed/removed,
+    # and new products may now be added during transaction edit.
     incoming = [i for i in body.items if i.quantity > 0]
     if not incoming:
         raise HTTPException(400, "Transaksi harus memiliki minimal 1 item")
 
+    # Prevent duplicate product rows in one edited transaction.
+    seen_pids = set()
+    for i in incoming:
+        if i.product_id in seen_pids:
+            raise HTTPException(400, "Produk duplikat pada transaksi")
+        seen_pids.add(i.product_id)
+
     old_by_pid = {i["product_id"]: i for i in old.get("items", [])}
     new_by_pid = {i.product_id: i for i in incoming}
 
-    # Reject unknown product_ids (would require new item add — out of scope)
+    # Load current product data for all incoming items.
+    product_cache = {}
     for pid in new_by_pid:
-        if pid not in old_by_pid:
-            raise HTTPException(400, "Menambah item baru tidak didukung saat edit")
+        prod = await db.products.find_one({"id": pid})
+        if not prod:
+            raise HTTPException(404, "Produk tidak ditemukan")
+        product_cache[pid] = prod
 
-    # Compute stock deltas. delta = new_qty - old_qty (positive = need more stock).
+    # Compute stock deltas for both existing and newly-added products.
+    # delta = new_qty - old_qty
+    # positive delta => additional stock must be consumed
+    # negative delta => stock is returned
+    all_pids = set(old_by_pid) | set(new_by_pid)
     stock_deltas = {}
-    for pid, oi in old_by_pid.items():
-        old_q = int(oi.get("quantity", 0))
+    for pid in all_pids:
+        old_q = int(old_by_pid.get(pid, {}).get("quantity", 0))
         new_q = int(new_by_pid[pid].quantity) if pid in new_by_pid else 0
-        d = new_q - old_q
-        if d != 0:
-            stock_deltas[pid] = d
+        delta = new_q - old_q
+        if delta != 0:
+            stock_deltas[pid] = delta
 
-    # Validate stock availability for any positive deltas
-    for pid, d in stock_deltas.items():
-        if d > 0:
-            prod = await db.products.find_one({"id": pid})
-            if not prod or int(prod.get("stock", 0)) < d:
-                raise HTTPException(400, f"Stok tidak cukup untuk {prod.get('name') if prod else 'produk'}")
+    # Validate stock before changing anything.
+    for pid, delta in stock_deltas.items():
+        if delta > 0:
+            prod = product_cache.get(pid)
+            if not prod:
+                prod = await db.products.find_one({"id": pid})
+                if prod:
+                    product_cache[pid] = prod
+            if not prod:
+                raise HTTPException(404, "Produk tidak ditemukan")
+            if int(prod.get("stock", 0)) < delta:
+                raise HTTPException(400, f"Stok tidak cukup untuk {prod.get('name', 'produk')}")
 
-    # Apply stock deltas & log to inventory_history
+    # Apply stock changes and write inventory history.
     txn_number = old.get("transaction_number", tid)
-    for pid, d in stock_deltas.items():
-        await db.products.update_one({"id": pid}, {"$inc": {"stock": -d}, "$set": {"updated_at": now_iso()}})
+    for pid, delta in stock_deltas.items():
+        await db.products.update_one(
+            {"id": pid},
+            {
+                "$inc": {"stock": -delta},
+                "$set": {"updated_at": now_iso()},
+            },
+        )
         prod = await db.products.find_one({"id": pid})
         await db.inventory_history.insert_one({
             "id": new_id(),
             "product_id": pid,
-            "product_name": prod.get("name"),
-            "variant": prod.get("variant"),
+            "product_name": prod.get("name") if prod else old_by_pid.get(pid, {}).get("product_name"),
+            "variant": prod.get("variant") if prod else old_by_pid.get(pid, {}).get("variant", ""),
             "type": "edit",
-            "quantity": -d,
+            "quantity": -delta,
             "reason": f"Edit transaksi {txn_number}",
             "created_at": now_iso(),
             "user_email": user["email"],
         })
 
-    # Rebuild line items using historical price/cost (preserve accounting accuracy)
+    # Rebuild transaction line items.
+    # Existing products preserve their historical selling/cost price.
+    # Newly-added products use the current product selling/cost price.
     line_items = []
     subtotal = 0.0
     total_cost = 0.0
+
     for i in incoming:
-        oi = old_by_pid[i.product_id]
-        price = float(oi.get("price", 0))
-        cost = float(oi.get("cost_price", 0))
+        old_item = old_by_pid.get(i.product_id)
+
+        if old_item:
+            product_name = old_item.get("product_name")
+            variant = old_item.get("variant", "")
+            price = float(old_item.get("price", 0))
+            cost = float(old_item.get("cost_price", 0))
+        else:
+            prod = product_cache[i.product_id]
+            product_name = prod.get("name")
+            variant = prod.get("variant", "")
+            price = float(prod.get("selling_price", 0))
+            cost = float(prod.get("cost_price", 0))
+
         sub = price * i.quantity
         cost_sub = cost * i.quantity
+
         line_items.append({
             "product_id": i.product_id,
-            "product_name": oi.get("product_name"),
-            "variant": oi.get("variant", ""),
+            "product_name": product_name,
+            "variant": variant,
             "quantity": i.quantity,
             "price": price,
             "cost_price": cost,
@@ -633,6 +676,7 @@ async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get
         "updated_at": now_iso(),
         "edited_by": user["email"],
     }
+
     await db.transactions.update_one({"id": tid}, {"$set": upd})
     return await db.transactions.find_one({"id": tid}, {"_id": 0})
 

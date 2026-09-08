@@ -20,9 +20,11 @@ const RANGES = {
 const cards = [
   { key: "period_sales", label: "Item Terjual", icon: ShoppingBag, color: "text-orange-500" },
   { key: "period_revenue", label: "Omzet", icon: DollarSign, color: "text-emerald-500", money: true },
+  { key: "manual_income", label: "Pemasukan Manual", icon: TrendingUp, color: "text-emerald-500", money: true },
   { key: "period_transactions", label: "Transaksi", icon: Receipt, color: "text-blue-500" },
   { key: "period_net_profit", label: "Laba Bersih", icon: TrendingUp, color: "text-amber-500", money: true },
   { key: "period_expense", label: "Pengeluaran", icon: Wallet, color: "text-rose-500", money: true },
+  { key: "net_cashflow", label: "Net Cashflow", icon: Wallet, color: "text-primary", money: true },
   { key: "total_product", label: "Total Produk", icon: Package, color: "text-purple-500", static: true },
   { key: "total_stock", label: "Total Stok", icon: Boxes, color: "text-cyan-500", static: true },
   { key: "total_revenue_all", label: "Total Omzet Sepanjang Masa", icon: DollarSign, color: "text-emerald-500", money: true, static: true },
@@ -33,6 +35,7 @@ export default function Dashboard() {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [data, setData] = useState(null);
+  const [incomes, setIncomes] = useState([]);
 
   const activeRange = useMemo(() => {
     if (range === "custom") {
@@ -48,8 +51,53 @@ export default function Dashboard() {
     const params = new URLSearchParams();
     if (activeRange.start) params.set("start_date", activeRange.start);
     if (activeRange.end) params.set("end_date", activeRange.end);
-    api.get(`/dashboard/summary?${params.toString()}`).then((r) => setData(r.data));
+
+    Promise.all([
+      api.get(`/dashboard/summary?${params.toString()}`),
+      api.get("/incomes"),
+    ]).then(([summaryRes, incomesRes]) => {
+      setData(summaryRes.data);
+      setIncomes(incomesRes.data || []);
+    });
   }, [activeRange.start, activeRange.end]);
+
+  const periodIncomes = useMemo(() => {
+    const startTime = activeRange.start ? new Date(activeRange.start).getTime() : null;
+    const endTime = activeRange.end ? new Date(activeRange.end).getTime() : null;
+
+    return incomes.filter((income) => {
+      const rawDate = income.date || income.created_at;
+      if (!rawDate) return false;
+
+      const incomeTime = new Date(rawDate).getTime();
+      if (Number.isNaN(incomeTime)) return false;
+      if (startTime !== null && incomeTime < startTime) return false;
+      if (endTime !== null && incomeTime > endTime) return false;
+      return true;
+    });
+  }, [incomes, activeRange.start, activeRange.end]);
+
+  const manualIncomeTotal = useMemo(
+    () => periodIncomes.reduce((sum, income) => sum + Number(income.amount || 0), 0),
+    [periodIncomes]
+  );
+
+  const incomeBreakdown = useMemo(() => {
+    const totals = periodIncomes.reduce((acc, income) => {
+      const category = income.category || "Lainnya";
+      acc[category] = (acc[category] || 0) + Number(income.amount || 0);
+      return acc;
+    }, {});
+
+    return Object.entries(totals)
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [periodIncomes]);
+
+  const netCashflow =
+    Number(data?.period_revenue || 0) +
+    manualIncomeTotal -
+    Number(data?.period_expense || 0);
 
   const rangeLabel = () => {
     if (range === "custom") {
@@ -95,7 +143,12 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
         {cards.map((c) => {
-          const val = data[c.key] || 0;
+          const val =
+            c.key === "manual_income"
+              ? manualIncomeTotal
+              : c.key === "net_cashflow"
+                ? netCashflow
+                : data[c.key] || 0;
           return (
             <div key={c.key} data-testid={`summary-${c.key}`} className="bg-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
@@ -111,6 +164,35 @@ export default function Dashboard() {
             </div>
           );
         })}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5" data-testid="manual-income-breakdown">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+          <div>
+            <h3 className="text-base font-semibold">Pemasukan Manual — {rangeLabel()}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Modal, investasi, pinjaman, refund, bonus, dan pemasukan lain dicatat terpisah dari omzet penjualan.
+            </p>
+          </div>
+          <div className="text-lg font-bold font-mono text-emerald-500">{formatRp(manualIncomeTotal)}</div>
+        </div>
+
+        {incomeBreakdown.length === 0 ? (
+          <div className="text-sm text-muted-foreground">Belum ada pemasukan manual di periode ini.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {incomeBreakdown.map((item) => (
+              <div key={item.category} className="flex items-center justify-between gap-3 bg-secondary/40 rounded-lg px-3 py-2">
+                <span className="text-sm">{item.category}</span>
+                <span className="text-sm font-mono font-semibold">{formatRp(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 pt-3 border-t border-border text-xs text-muted-foreground">
+          Net Cashflow = Omzet + Pemasukan Manual - Pengeluaran. Pemasukan manual tidak ditambahkan ke Omzet atau Laba Bersih.
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

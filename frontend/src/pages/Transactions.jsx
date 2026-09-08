@@ -23,11 +23,14 @@ export default function Transactions() {
   const [deletingTxn, setDeletingTxn] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [sort, setSort] = useState("date_desc");
+  const [products, setProducts] = useState([]);
+  const [addProductId, setAddProductId] = useState("");
 
   const load = () => api.get("/transactions").then((r) => setItems(r.data));
   useEffect(() => {
     load();
     api.get("/settings").then((r) => setSettings(r.data));
+    api.get("/products").then((r) => setProducts(r.data));
   }, []);
 
   const filtered = items.filter((t) => !search || `${t.transaction_number} ${t.customer_name || ""}`.toLowerCase().includes(search.toLowerCase()));
@@ -101,6 +104,56 @@ export default function Transactions() {
   };
   const removeItem = (pid) => {
     setEditing((e) => ({ ...e, items: e.items.filter((i) => i.product_id !== pid) }));
+  };
+
+  const addProductToTransaction = () => {
+    if (!editing || !addProductId) return;
+
+    const product = products.find((p) => p.id === addProductId);
+    if (!product) {
+      toast.error("Produk tidak ditemukan");
+      return;
+    }
+
+    const existing = editing.items.find((i) => i.product_id === product.id);
+
+    if (existing) {
+      if (product.stock <= 0) {
+        toast.error("Stok tambahan produk tidak tersedia");
+        return;
+      }
+      setEditing((e) => ({
+        ...e,
+        items: e.items.map((i) =>
+          i.product_id === product.id
+            ? { ...i, quantity: i.quantity + 1 }
+            : i
+        ),
+      }));
+    } else {
+      if (product.stock <= 0) {
+        toast.error("Stok produk habis");
+        return;
+      }
+      setEditing((e) => ({
+        ...e,
+        items: [
+          ...e.items,
+          {
+            product_id: product.id,
+            product_name: product.name,
+            variant: product.variant || "",
+            quantity: 1,
+            price: Number(product.selling_price) || 0,
+            subtotal: Number(product.selling_price) || 0,
+            note: "",
+          },
+        ],
+      }));
+    }
+
+    setAddProductId("");
+    toast.success(`${product.name}${product.variant ? ` - ${product.variant}` : ""} ditambahkan`);
   };
 
   const totals = useMemo(() => {
@@ -251,6 +304,32 @@ export default function Transactions() {
 
               <div>
                 <div className="text-xs font-semibold text-muted-foreground mb-2">Item Transaksi</div>
+
+                <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                  <Select value={addProductId} onValueChange={setAddProductId}>
+                    <SelectTrigger className="flex-1" data-testid="edit-add-product-select">
+                      <SelectValue placeholder="Pilih produk untuk ditambahkan..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {products.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}{p.variant ? ` - ${p.variant}` : ""} • {formatRp(p.selling_price)} • Stok {p.stock}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addProductToTransaction}
+                    disabled={!addProductId}
+                    data-testid="edit-add-product"
+                  >
+                    <Plus size={14} className="mr-1.5" />
+                    Tambah Produk
+                  </Button>
+                </div>
+
                 <div className="space-y-2">
                   {editing.items.length === 0 && <div className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">Semua item telah dihapus. Tambahkan minimal 1 item untuk menyimpan.</div>}
                   {editing.items.map((i) => (

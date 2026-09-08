@@ -24,6 +24,9 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [delId, setDelId] = useState(null);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [savingCategory, setSavingCategory] = useState(false);
 
   const load = () => {
     api.get("/products").then((r) => setItems(r.data));
@@ -61,6 +64,43 @@ export default function Products() {
       toast.success(editing ? "Produk diupdate" : "Produk ditambahkan");
       setOpen(false); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
+
+  const createCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      toast.error("Nama kategori wajib diisi");
+      return;
+    }
+
+    try {
+      setSavingCategory(true);
+      const r = await api.post("/categories", { name });
+
+      let created = r.data;
+      if (!created?.id) {
+        const refreshed = await api.get("/categories");
+        setCats(refreshed.data);
+        created = refreshed.data.find((c) => c.name?.toLowerCase() === name.toLowerCase());
+      } else {
+        setCats((prev) => {
+          const exists = prev.some((c) => c.id === created.id);
+          return exists ? prev : [...prev, created];
+        });
+      }
+
+      if (created?.id) {
+        setForm((prev) => ({ ...prev, category_id: created.id }));
+      }
+
+      toast.success("Kategori ditambahkan");
+      setNewCategoryName("");
+      setCategoryDialogOpen(false);
+    } catch (e) {
+      toast.error(formatErr(e.response?.data?.detail) || "Gagal menambah kategori");
+    } finally {
+      setSavingCategory(false);
+    }
   };
 
   const doDelete = async () => {
@@ -148,9 +188,22 @@ export default function Products() {
             <div className="col-span-2"><Label>Nama Produk</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="product-form-name" /></div>
             <div className="col-span-2"><Label>Varian</Label><Input value={form.variant} onChange={(e) => setForm({ ...form, variant: e.target.value })} /></div>
             <div><Label>Kategori</Label>
-              <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+              <Select
+                value={form.category_id || ""}
+                onValueChange={(v) => {
+                  if (v === "__new_category__") {
+                    setNewCategoryName("");
+                    setCategoryDialogOpen(true);
+                    return;
+                  }
+                  setForm({ ...form, category_id: v });
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
-                <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  <SelectItem value="__new_category__">+ Kategori Baru</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <div><Label>Supplier</Label>
@@ -171,6 +224,38 @@ export default function Products() {
             </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Batal</Button><Button onClick={submit} data-testid="product-form-save">{editing ? "Simpan" : "Tambah"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={categoryDialogOpen} onOpenChange={setCategoryDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Kategori Baru</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Nama Kategori</Label>
+            <Input
+              value={newCategoryName}
+              onChange={(e) => setNewCategoryName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !savingCategory) createCategory();
+              }}
+              placeholder="Contoh: Frozen Food"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCategoryDialogOpen(false)}
+              disabled={savingCategory}
+            >
+              Batal
+            </Button>
+            <Button onClick={createCategory} disabled={savingCategory}>
+              {savingCategory ? "Menyimpan..." : "Simpan"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
