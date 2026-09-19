@@ -8,7 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Search, Package, ArrowDownWideNarrow, PlusCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, ArrowDownWideNarrow } from "lucide-react";
 import { toast } from "sonner";
 
 const empty = { name: "", variant: "", category_id: "", supplier_id: "", cost_price: 0, selling_price: 0, stock: 0, minimum_stock: 5, sku: "", status: "active", description: "" };
@@ -178,28 +178,42 @@ export default function Products() {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Nama Produk</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="product-form-name" /></div>
             <div className="col-span-2"><Label>Varian</Label><Input value={form.variant} onChange={(e) => setForm({ ...form, variant: e.target.value })} /></div>
-            <div>
-              <div className="flex items-center justify-between">
-                <Label>Kategori</Label>
-                <button type="button" onClick={() => setNewCatOpen(true)} className="text-xs text-primary hover:underline inline-flex items-center gap-1" data-testid="product-form-add-category">
-                  <PlusCircle size={12} /> Baru
-                </button>
-              </div>
-              <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
+            <div><Label>Kategori</Label>
+              <Select
+                value={form.category_id || ""}
+                onValueChange={(v) => {
+                  if (v === "__new_category__") {
+                    setNewCatName("");
+                    setNewCatOpen(true);
+                    return;
+                  }
+                  setForm({ ...form, category_id: v });
+                }}
+              >
                 <SelectTrigger data-testid="product-form-category-trigger"><SelectValue placeholder="Pilih" /></SelectTrigger>
-                <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  <SelectItem value="__new_category__">+ Kategori Baru</SelectItem>
+                </SelectContent>
               </Select>
             </div>
-            <div>
-              <div className="flex items-center justify-between">
-                <Label>Supplier</Label>
-                <button type="button" onClick={() => setNewSupOpen(true)} className="text-xs text-primary hover:underline inline-flex items-center gap-1" data-testid="product-form-add-supplier">
-                  <PlusCircle size={12} /> Baru
-                </button>
-              </div>
-              <Select value={form.supplier_id || ""} onValueChange={(v) => setForm({ ...form, supplier_id: v })}>
+            <div><Label>Supplier</Label>
+              <Select
+                value={form.supplier_id || ""}
+                onValueChange={(v) => {
+                  if (v === "__new_supplier__") {
+                    setNewSupName(""); setNewSupPhone("");
+                    setNewSupOpen(true);
+                    return;
+                  }
+                  setForm({ ...form, supplier_id: v });
+                }}
+              >
                 <SelectTrigger data-testid="product-form-supplier-trigger"><SelectValue placeholder="Pilih" /></SelectTrigger>
-                <SelectContent>{sups.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {sups.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                  <SelectItem value="__new_supplier__">+ Supplier Baru</SelectItem>
+                </SelectContent>
               </Select>
             </div>
             <div><Label>Harga Modal</Label><Input type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} data-testid="product-form-cost" /></div>
@@ -214,6 +228,53 @@ export default function Products() {
             </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Batal</Button><Button onClick={submit} data-testid="product-form-save">{editing ? "Simpan" : "Tambah"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newCatOpen} onOpenChange={setNewCatOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Kategori Baru</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            <Label>Nama Kategori</Label>
+            <Input
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") createCategory(); }}
+              placeholder="Contoh: Frozen Food"
+              autoFocus
+              data-testid="new-category-name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewCatOpen(false)}>Batal</Button>
+            <Button onClick={createCategory} data-testid="new-category-save">Simpan</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newSupOpen} onOpenChange={setNewSupOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Supplier Baru</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            <div>
+              <Label>Nama Supplier</Label>
+              <Input
+                value={newSupName}
+                onChange={(e) => setNewSupName(e.target.value)}
+                placeholder="Contoh: Frozen Food Supplier"
+                autoFocus
+                data-testid="new-supplier-name"
+              />
+            </div>
+            <div>
+              <Label>Telepon (opsional)</Label>
+              <Input value={newSupPhone} onChange={(e) => setNewSupPhone(e.target.value)} placeholder="0812-xxxx" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewSupOpen(false)}>Batal</Button>
+            <Button onClick={createSupplier} data-testid="new-supplier-save">Simpan</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
