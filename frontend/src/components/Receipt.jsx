@@ -26,10 +26,12 @@ function buildWaMessage(txn, settings) {
   });
   lines.push("--------------------------------");
   lines.push(`Subtotal : ${formatRp(txn.subtotal)}`);
+  if (txn.shipping_fee > 0) lines.push(`Ongkir   : ${formatRp(txn.shipping_fee)}`);
+  if (txn.packing_fee > 0) lines.push(`Packing  : ${formatRp(txn.packing_fee)}`);
+  if (txn.frying_fee > 0) lines.push(`Goreng   : ${formatRp(txn.frying_fee)}`);
   if (txn.discount > 0) lines.push(`Diskon   : -${formatRp(txn.discount)}`);
   lines.push(`*TOTAL   : ${formatRp(txn.total_amount)}*`);
-  lines.push(`${txn.payment_method}: ${formatRp(txn.cash_received)}`);
-  if (txn.change_amount > 0) lines.push(`Kembali  : ${formatRp(txn.change_amount)}`);
+  lines.push(`${txn.payment_method}: ${formatRp(txn.total_amount)}`);
   if (settings.receipt_footer) {
     lines.push("--------------------------------");
     lines.push(settings.receipt_footer);
@@ -138,10 +140,12 @@ export default function Receipt({ txn, settings, onClose, showCloseButton = fals
           </div>
           <div className="py-1.5 space-y-0.5" style={{ fontSize: "10px" }}>
             <div className="flex justify-between"><span>Subtotal</span><span>{formatRp(txn.subtotal)}</span></div>
+            {txn.shipping_fee > 0 && <div className="flex justify-between"><span>Ongkir</span><span>{formatRp(txn.shipping_fee)}</span></div>}
+            {txn.packing_fee > 0 && <div className="flex justify-between"><span>Packing</span><span>{formatRp(txn.packing_fee)}</span></div>}
+            {txn.frying_fee > 0 && <div className="flex justify-between"><span>Biaya Goreng</span><span>{formatRp(txn.frying_fee)}</span></div>}
             {txn.discount > 0 && <div className="flex justify-between"><span>Diskon</span><span>-{formatRp(txn.discount)}</span></div>}
             <div className="flex justify-between font-bold" style={{ fontSize: "11px" }}><span>TOTAL</span><span>{formatRp(txn.total_amount)}</span></div>
-            <div className="flex justify-between"><span>{txn.payment_method}</span><span>{formatRp(txn.cash_received)}</span></div>
-            {txn.change_amount > 0 && <div className="flex justify-between"><span>Kembali</span><span>{formatRp(txn.change_amount)}</span></div>}
+            <div className="flex justify-between"><span>{txn.payment_method}</span><span>{formatRp(txn.total_amount)}</span></div>
           </div>
           {settings.receipt_footer && (
             <div className="pt-1.5 border-t border-dashed border-black text-center" style={{ fontSize: "10px" }}>

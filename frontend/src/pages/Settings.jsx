@@ -9,7 +9,7 @@ import { useTheme } from "../context/ThemeContext";
 import { Sun, Moon, MessageCircle, Info } from "lucide-react";
 
 export default function Settings() {
-  const [form, setForm] = useState({ store_name: "", address: "", phone: "", receipt_footer: "", fonnte_api_key: "", fonnte_device: "" });
+  const [form, setForm] = useState({ store_name: "", address: "", phone: "", receipt_footer: "", fonnte_api_key: "", fonnte_device: "", default_shipping_fee: 0, default_packing_fee: 0, default_frying_fee: 0 });
   const [loading, setLoading] = useState(false);
   const { theme, setTheme } = useTheme();
 
@@ -20,7 +20,15 @@ export default function Settings() {
 
   const save = async () => {
     setLoading(true);
-    try { await api.put("/settings", form); toast.success("Pengaturan disimpan"); }
+    try {
+      await api.put("/settings", {
+        ...form,
+        default_shipping_fee: Number(form.default_shipping_fee) || 0,
+        default_packing_fee: Number(form.default_packing_fee) || 0,
+        default_frying_fee: Number(form.default_frying_fee) || 0,
+      });
+      toast.success("Pengaturan disimpan");
+    }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
     finally { setLoading(false); }
   };
@@ -77,6 +85,25 @@ export default function Settings() {
           <pre className="text-xs font-mono bg-background border border-border rounded px-2 py-1 whitespace-pre-wrap">{`NAMA, Produk, Jumlah, Variant, Deskripsi
 Contoh:
 Budi, Risoles, 2, Coklat Keju, tanpa saus`}</pre>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+        <h3 className="font-semibold">Biaya Tambahan Default (POS)</h3>
+        <p className="text-xs text-muted-foreground">Angka ini otomatis muncul di keranjang saat transaksi baru, dan tetap bisa diubah manual per transaksi.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <Label>Ongkir</Label>
+            <Input type="number" value={form.default_shipping_fee ?? 0} onChange={(e) => setForm({ ...form, default_shipping_fee: e.target.value })} className="font-mono" data-testid="settings-shipping" />
+          </div>
+          <div>
+            <Label>Packing</Label>
+            <Input type="number" value={form.default_packing_fee ?? 0} onChange={(e) => setForm({ ...form, default_packing_fee: e.target.value })} className="font-mono" data-testid="settings-packing" />
+          </div>
+          <div>
+            <Label>Biaya Goreng</Label>
+            <Input type="number" value={form.default_frying_fee ?? 0} onChange={(e) => setForm({ ...form, default_frying_fee: e.target.value })} className="font-mono" data-testid="settings-frying" />
+          </div>
         </div>
       </div>
 

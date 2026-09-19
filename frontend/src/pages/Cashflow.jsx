@@ -75,11 +75,10 @@ export default function Cashflow() {
       </div>
 
       {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <div className="bg-card border border-border rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Pemasukan Total</span><TrendingUp size={16} className="text-emerald-500" /></div><div className="mt-2 text-lg font-bold font-mono text-emerald-500">{formatRp(summary.total_income)}</div><div className="text-[10px] text-muted-foreground mt-1">Sales {formatRp(summary.total_income_sales)} + Manual {formatRp(summary.total_income_manual)}</div></div>
-          <div className="bg-card border border-border rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Pemasukan Manual</span><TrendingUp size={16} className="text-emerald-500" /></div><div className="mt-2 text-lg font-bold font-mono">{formatRp(summary.total_income_manual)}</div></div>
-          <div className="bg-card border border-border rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Pengeluaran</span><TrendingDown size={16} className="text-rose-500" /></div><div className="mt-2 text-lg font-bold font-mono text-rose-500">{formatRp(summary.total_expense)}</div></div>
-          <div className="bg-primary/10 border border-primary/30 rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Net Cashflow</span><Wallet size={16} className="text-primary" /></div><div className="mt-2 text-lg font-bold font-mono text-primary">{formatRp(summary.net_cashflow)}</div></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-card border border-border rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Total Pemasukan</span><TrendingUp size={16} className="text-emerald-500" /></div><div className="mt-2 text-lg font-bold font-mono text-emerald-500">{formatRp(summary.total_income)}</div><div className="text-[10px] text-muted-foreground mt-1">Sales {formatRp(summary.total_income_sales)} + Manual {formatRp(summary.total_income_manual)}</div></div>
+          <div className="bg-card border border-border rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Total Pengeluaran</span><TrendingDown size={16} className="text-rose-500" /></div><div className="mt-2 text-lg font-bold font-mono text-rose-500">{formatRp(summary.total_expense)}</div></div>
+          <div className="bg-primary/10 border border-primary/30 rounded-xl p-4"><div className="flex items-center justify-between"><span className="text-xs text-muted-foreground">Laba Bersih</span><Wallet size={16} className="text-primary" /></div><div className="mt-2 text-lg font-bold font-mono text-primary">{formatRp(summary.net_cashflow)}</div></div>
         </div>
       )}
 

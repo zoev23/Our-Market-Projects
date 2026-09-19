@@ -145,10 +145,13 @@ class CartItem(BaseModel):
 class TransactionIn(BaseModel):
     items: List[CartItem]
     discount: float = 0
-    payment_method: str = "Tunai"
+    payment_method: str = "QRIS"
     cash_received: float = 0
     customer_name: Optional[str] = ""
     transaction_date: Optional[str] = None
+    shipping_fee: float = 0
+    packing_fee: float = 0
+    frying_fee: float = 0
 
 
 class TransactionUpdateItem(BaseModel):
@@ -160,9 +163,12 @@ class TransactionUpdateItem(BaseModel):
 class TransactionUpdate(BaseModel):
     items: List[TransactionUpdateItem]
     discount: float = 0
-    payment_method: str = "Tunai"
+    payment_method: str = "QRIS"
     cash_received: float = 0
     customer_name: Optional[str] = ""
+    shipping_fee: float = 0
+    packing_fee: float = 0
+    frying_fee: float = 0
 
 
 class StockAdjustIn(BaseModel):
@@ -194,6 +200,9 @@ class SettingsIn(BaseModel):
     logo: Optional[str] = None
     fonnte_api_key: Optional[str] = None
     fonnte_device: Optional[str] = None
+    default_shipping_fee: Optional[float] = None
+    default_packing_fee: Optional[float] = None
+    default_frying_fee: Optional[float] = None
 
 
 class WhatsAppSendIn(BaseModel):
@@ -399,12 +408,18 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
     line_items = []
     subtotal = 0.0
     total_cost = 0.0
+    has_supplier = False
+    no_supplier = False
     for item in body.items:
         prod = await db.products.find_one({"id": item.product_id})
         if not prod:
             raise HTTPException(404, f"Produk tidak ditemukan")
         if int(prod.get("stock", 0)) < item.quantity:
             raise HTTPException(400, f"Stok tidak cukup untuk {prod['name']}")
+        if prod.get("supplier_id"):
+            has_supplier = True
+        else:
+            no_supplier = True
         price = float(prod.get("selling_price", 0))
         cost = float(prod.get("cost_price", 0))
         sub = price * item.quantity
@@ -423,9 +438,21 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
         subtotal += sub
         total_cost += cost_sub
 
+    if has_supplier and no_supplier:
+        raise HTTPException(400, "Keranjang tidak boleh gabung produk Supplier dan Stok Sendiri. Pisahkan transaksi.")
+    source_type = "supplier" if has_supplier else "own_stock"
+
     discount = float(body.discount or 0)
-    total_amount = max(subtotal - discount, 0)
-    profit = total_amount - total_cost
+    shipping_fee = float(body.shipping_fee or 0)
+    packing_fee = float(body.packing_fee or 0)
+    frying_fee = float(body.frying_fee or 0)
+    fees_total = shipping_fee + packing_fee + frying_fee
+    total_amount = max(subtotal + fees_total - discount, 0)
+    # For own_stock, cost already expensed at restock — don't double-subtract.
+    if source_type == "own_stock":
+        profit = total_amount
+    else:
+        profit = total_amount - total_cost
     cash_received = float(body.cash_received or total_amount)
     change_amount = max(cash_received - total_amount, 0)
 
@@ -467,9 +494,13 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
         "items": line_items,
         "subtotal": subtotal,
         "discount": discount,
+        "shipping_fee": shipping_fee,
+        "packing_fee": packing_fee,
+        "frying_fee": frying_fee,
         "total_amount": total_amount,
         "total_cost": total_cost,
         "profit": profit,
+        "source_type": source_type,
         "payment_method": body.payment_method,
         "cash_received": cash_received,
         "change_amount": change_amount,
@@ -614,8 +645,16 @@ async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get
         total_cost += cost_sub
 
     discount = float(body.discount or 0)
-    total_amount = max(subtotal - discount, 0)
-    profit = total_amount - total_cost
+    shipping_fee = float(body.shipping_fee or 0)
+    packing_fee = float(body.packing_fee or 0)
+    frying_fee = float(body.frying_fee or 0)
+    fees_total = shipping_fee + packing_fee + frying_fee
+    total_amount = max(subtotal + fees_total - discount, 0)
+    source_type = old.get("source_type") or "supplier"
+    if source_type == "own_stock":
+        profit = total_amount
+    else:
+        profit = total_amount - total_cost
     cash_received = float(body.cash_received or total_amount)
     change_amount = max(cash_received - total_amount, 0)
 
@@ -623,6 +662,9 @@ async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get
         "items": line_items,
         "subtotal": subtotal,
         "discount": discount,
+        "shipping_fee": shipping_fee,
+        "packing_fee": packing_fee,
+        "frying_fee": frying_fee,
         "total_amount": total_amount,
         "total_cost": total_cost,
         "profit": profit,
@@ -699,12 +741,18 @@ async def get_settings(user=Depends(get_current_user)):
             "logo": "",
             "fonnte_api_key": "",
             "fonnte_device": "",
+            "default_shipping_fee": 0,
+            "default_packing_fee": 0,
+            "default_frying_fee": 0,
         }
         await db.settings.insert_one(s)
         s.pop("_id", None)
     # ensure new keys always exist
     s.setdefault("fonnte_api_key", "")
     s.setdefault("fonnte_device", "")
+    s.setdefault("default_shipping_fee", 0)
+    s.setdefault("default_packing_fee", 0)
+    s.setdefault("default_frying_fee", 0)
     return s
 
 

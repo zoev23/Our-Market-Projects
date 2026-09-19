@@ -8,7 +8,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Search, Package, ArrowDownWideNarrow } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Package, ArrowDownWideNarrow, PlusCircle } from "lucide-react";
 import { toast } from "sonner";
 
 const empty = { name: "", variant: "", category_id: "", supplier_id: "", cost_price: 0, selling_price: 0, stock: 0, minimum_stock: 5, sku: "", status: "active", description: "" };
@@ -24,6 +24,11 @@ export default function Products() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [delId, setDelId] = useState(null);
+  const [newCatOpen, setNewCatOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [newSupOpen, setNewSupOpen] = useState(false);
+  const [newSupName, setNewSupName] = useState("");
+  const [newSupPhone, setNewSupPhone] = useState("");
 
   const load = () => {
     api.get("/products").then((r) => setItems(r.data));
@@ -66,6 +71,32 @@ export default function Products() {
   const doDelete = async () => {
     try { await api.delete(`/products/${delId}`); toast.success("Produk dihapus"); setDelId(null); load(); }
     catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
+
+  const createCategory = async () => {
+    const name = newCatName.trim();
+    if (!name) return toast.error("Nama kategori wajib diisi");
+    if (cats.some((c) => c.name.toLowerCase() === name.toLowerCase())) return toast.error("Kategori sudah ada");
+    try {
+      const r = await api.post("/categories", { name });
+      setCats((prev) => [...prev, r.data].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm((f) => ({ ...f, category_id: r.data.id }));
+      toast.success("Kategori ditambahkan");
+      setNewCatName(""); setNewCatOpen(false);
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
+  };
+
+  const createSupplier = async () => {
+    const name = newSupName.trim();
+    if (!name) return toast.error("Nama supplier wajib diisi");
+    if (sups.some((s) => s.name.toLowerCase() === name.toLowerCase())) return toast.error("Supplier sudah ada");
+    try {
+      const r = await api.post("/suppliers", { name, phone: newSupPhone.trim() });
+      setSups((prev) => [...prev, r.data].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm((f) => ({ ...f, supplier_id: r.data.id }));
+      toast.success("Supplier ditambahkan");
+      setNewSupName(""); setNewSupPhone(""); setNewSupOpen(false);
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
 
   const profit = Number(form.selling_price) - Number(form.cost_price);
@@ -147,15 +178,27 @@ export default function Products() {
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2"><Label>Nama Produk</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="product-form-name" /></div>
             <div className="col-span-2"><Label>Varian</Label><Input value={form.variant} onChange={(e) => setForm({ ...form, variant: e.target.value })} /></div>
-            <div><Label>Kategori</Label>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>Kategori</Label>
+                <button type="button" onClick={() => setNewCatOpen(true)} className="text-xs text-primary hover:underline inline-flex items-center gap-1" data-testid="product-form-add-category">
+                  <PlusCircle size={12} /> Baru
+                </button>
+              </div>
               <Select value={form.category_id || ""} onValueChange={(v) => setForm({ ...form, category_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
+                <SelectTrigger data-testid="product-form-category-trigger"><SelectValue placeholder="Pilih" /></SelectTrigger>
                 <SelectContent>{cats.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div><Label>Supplier</Label>
+            <div>
+              <div className="flex items-center justify-between">
+                <Label>Supplier</Label>
+                <button type="button" onClick={() => setNewSupOpen(true)} className="text-xs text-primary hover:underline inline-flex items-center gap-1" data-testid="product-form-add-supplier">
+                  <PlusCircle size={12} /> Baru
+                </button>
+              </div>
               <Select value={form.supplier_id || ""} onValueChange={(v) => setForm({ ...form, supplier_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Pilih" /></SelectTrigger>
+                <SelectTrigger data-testid="product-form-supplier-trigger"><SelectValue placeholder="Pilih" /></SelectTrigger>
                 <SelectContent>{sups.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>

@@ -86,8 +86,11 @@ export default function Transactions() {
       id: t.id,
       transaction_number: t.transaction_number,
       customer_name: t.customer_name || "",
-      payment_method: t.payment_method || "Tunai",
+      payment_method: t.payment_method || "QRIS",
       discount: t.discount || 0,
+      shipping_fee: t.shipping_fee || 0,
+      packing_fee: t.packing_fee || 0,
+      frying_fee: t.frying_fee || 0,
       cash_received: t.cash_received || 0,
       items: t.items.map((i) => ({ ...i })),
     });
@@ -108,10 +111,11 @@ export default function Transactions() {
     const kept = editing.items.filter((i) => i.quantity > 0);
     const subtotal = kept.reduce((s, i) => s + i.price * i.quantity, 0);
     const discount = Number(editing.discount) || 0;
-    const total_amount = Math.max(subtotal - discount, 0);
+    const fees = (Number(editing.shipping_fee) || 0) + (Number(editing.packing_fee) || 0) + (Number(editing.frying_fee) || 0);
+    const total_amount = Math.max(subtotal + fees - discount, 0);
     const cash = Number(editing.cash_received) || 0;
     const change = Math.max(cash - total_amount, 0);
-    return { subtotal, total_amount, change, itemCount: kept.length };
+    return { subtotal, fees, total_amount, change, itemCount: kept.length };
   }, [editing]);
 
   const save = async () => {
@@ -122,6 +126,9 @@ export default function Transactions() {
       await api.put(`/transactions/${editing.id}`, {
         items: editing.items.filter((i) => i.quantity > 0).map((i) => ({ product_id: i.product_id, quantity: i.quantity, note: i.note || "" })),
         discount: Number(editing.discount) || 0,
+        shipping_fee: Number(editing.shipping_fee) || 0,
+        packing_fee: Number(editing.packing_fee) || 0,
+        frying_fee: Number(editing.frying_fee) || 0,
         payment_method: editing.payment_method,
         cash_received: Number(editing.cash_received) || 0,
         customer_name: editing.customer_name || "",
@@ -195,6 +202,8 @@ export default function Transactions() {
                     {t.transaction_number}
                     {t.edited_by && <div className="text-[10px] text-amber-500 mt-0.5">diedit</div>}
                     {t.source === "whatsapp" && <div className="text-[10px] text-emerald-500 mt-0.5">via WA</div>}
+                    {t.source_type === "supplier" && <div className="text-[10px] text-amber-600 mt-0.5">Supplier</div>}
+                    {t.source_type === "own_stock" && <div className="text-[10px] text-emerald-600 mt-0.5">Stok Sendiri</div>}
                   </td>
                   <td className="px-4 py-3 text-xs">{formatDateTime(t.created_at)}</td>
                   <td className="px-4 py-3 text-xs">{t.customer_name || <span className="text-muted-foreground">-</span>}</td>
@@ -240,10 +249,11 @@ export default function Transactions() {
                   <Select value={editing.payment_method} onValueChange={(v) => setEditing({ ...editing, payment_method: v })}>
                     <SelectTrigger data-testid="edit-payment"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Tunai">Tunai</SelectItem>
                       <SelectItem value="QRIS">QRIS</SelectItem>
                       <SelectItem value="Transfer">Transfer Bank</SelectItem>
-                      <SelectItem value="Debit">Debit</SelectItem>
+                      {editing.payment_method && !["QRIS", "Transfer"].includes(editing.payment_method) && (
+                        <SelectItem value={editing.payment_method}>{editing.payment_method} (lama)</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -292,11 +302,24 @@ export default function Transactions() {
                   <Label className="text-xs">Uang Diterima</Label>
                   <Input type="number" value={editing.cash_received} onChange={(e) => setEditing({ ...editing, cash_received: e.target.value })} data-testid="edit-cash" />
                 </div>
+                <div>
+                  <Label className="text-xs">Ongkir</Label>
+                  <Input type="number" value={editing.shipping_fee} onChange={(e) => setEditing({ ...editing, shipping_fee: e.target.value })} data-testid="edit-shipping" />
+                </div>
+                <div>
+                  <Label className="text-xs">Packing</Label>
+                  <Input type="number" value={editing.packing_fee} onChange={(e) => setEditing({ ...editing, packing_fee: e.target.value })} data-testid="edit-packing" />
+                </div>
+                <div>
+                  <Label className="text-xs">Biaya Goreng</Label>
+                  <Input type="number" value={editing.frying_fee} onChange={(e) => setEditing({ ...editing, frying_fee: e.target.value })} data-testid="edit-frying" />
+                </div>
               </div>
 
               {totals && (
                 <div className="bg-secondary/40 rounded-lg p-3 space-y-1 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-mono">{formatRp(totals.subtotal)}</span></div>
+                  {totals.fees > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Biaya Tambahan</span><span className="font-mono">+{formatRp(totals.fees)}</span></div>}
                   <div className="flex justify-between font-bold text-base"><span>Total</span><span className="font-mono text-primary" data-testid="edit-total">{formatRp(totals.total_amount)}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Kembalian</span><span className="font-mono text-emerald-500">{formatRp(totals.change)}</span></div>
                 </div>
