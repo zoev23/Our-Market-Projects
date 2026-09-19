@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, ClipboardList } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Package, Boxes, Users, Receipt, BarChart3, Wallet, Settings, LogOut, Sun, Moon, Menu, ClipboardList, Upload } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -33,6 +33,7 @@ const groups = [
   {
     title: "Sistem",
     items: [
+      { to: "/import", label: "Import Data", icon: Upload, id: "import" },
       { to: "/settings", label: "Pengaturan", icon: Settings, id: "settings" },
     ],
   },

@@ -15,6 +15,7 @@ import Reports from "./pages/Reports";
 import Cashflow from "./pages/Cashflow";
 import SupplierRecap from "./pages/SupplierRecap";
 import Settings from "./pages/Settings";
+import ImportData from "./pages/ImportData";
 import "./App.css";
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
               <Route path="/supplier-recap" element={<SupplierRecap />} />
               <Route path="/cashflow" element={<Cashflow />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/import" element={<ImportData />} />
             </Route>
           </Routes>
         </BrowserRouter>

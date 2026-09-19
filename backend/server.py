@@ -210,6 +210,46 @@ class WhatsAppSendIn(BaseModel):
     message: str
 
 
+class ImportProductRow(BaseModel):
+    name: str
+    variant: Optional[str] = ""
+    category_name: Optional[str] = ""
+    supplier_name: Optional[str] = ""
+    cost_price: float = 0
+    selling_price: float = 0
+    stock: int = 0
+    minimum_stock: int = 5
+    sku: Optional[str] = ""
+    description: Optional[str] = ""
+
+
+class ImportProductsIn(BaseModel):
+    rows: List[ImportProductRow]
+
+
+class ImportStockRow(BaseModel):
+    product_name: str
+    variant: Optional[str] = ""
+    quantity: int
+    reason: Optional[str] = "Restock"
+    notes: Optional[str] = ""
+
+
+class ImportStockIn(BaseModel):
+    rows: List[ImportStockRow]
+
+
+class ImportExpenseRow(BaseModel):
+    category: str
+    description: Optional[str] = ""
+    amount: float
+    date: Optional[str] = None
+
+
+class ImportExpensesIn(BaseModel):
+    rows: List[ImportExpenseRow]
+
+
 # ---------- Auth routes ----------
 @api.post("/auth/login")
 async def login(body: LoginIn, response: Response):
@@ -392,7 +432,32 @@ async def adjust_stock(body: StockAdjustIn, user=Depends(get_current_user)):
         "created_at": now_iso(),
         "user_email": user["email"],
     })
-    return {"ok": True, "new_stock": new_stock}
+
+    # Auto Restock Expense: hanya untuk produk stok sendiri (tanpa supplier)
+    # Supplier products bayar saat terjual (cost sudah dipotong dari profit), jadi tidak dobel expense.
+    expense_created = None
+    if (
+        body.quantity > 0
+        and (body.reason or "").strip().lower() == "restock"
+        and not prod.get("supplier_id")
+    ):
+        cost_price = float(prod.get("cost_price", 0) or 0)
+        amount = cost_price * int(body.quantity)
+        if amount > 0:
+            expense_doc = {
+                "id": new_id(),
+                "category": "Restock",
+                "description": f"Restock {prod.get('name')}{(' - ' + prod.get('variant')) if prod.get('variant') else ''} x{body.quantity}",
+                "amount": amount,
+                "date": now_iso(),
+                "created_at": now_iso(),
+                "user_email": user["email"],
+                "auto": True,
+                "source_product_id": body.product_id,
+            }
+            await db.expenses.insert_one(expense_doc)
+            expense_created = {"id": expense_doc["id"], "amount": amount}
+    return {"ok": True, "new_stock": new_stock, "expense_created": expense_created}
 
 
 @api.get("/inventory/history")
@@ -1289,10 +1354,28 @@ async def buyer_recap(
 
 
 @api.get("/cashflow/summary")
-async def cashflow_summary(user=Depends(get_current_user)):
-    txns = await db.transactions.find({}, {"_id": 0}).to_list(5000)
-    expenses = await db.expenses.find({}, {"_id": 0}).to_list(2000)
-    incomes = await db.incomes.find({}, {"_id": 0}).to_list(2000)
+async def cashflow_summary(
+    user=Depends(get_current_user),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    tq = {}
+    if start_date or end_date:
+        tq["created_at"] = {}
+        if start_date:
+            tq["created_at"]["$gte"] = start_date
+        if end_date:
+            tq["created_at"]["$lte"] = end_date
+    dq = {}
+    if start_date or end_date:
+        dq["date"] = {}
+        if start_date:
+            dq["date"]["$gte"] = start_date
+        if end_date:
+            dq["date"]["$lte"] = end_date
+    txns = await db.transactions.find(tq, {"_id": 0}).to_list(5000)
+    expenses = await db.expenses.find(dq, {"_id": 0}).to_list(2000)
+    incomes = await db.incomes.find(dq, {"_id": 0}).to_list(2000)
     total_income_sales = sum(t.get("total_amount", 0) for t in txns)
     total_income_manual = sum(i.get("amount", 0) for i in incomes)
     total_income = total_income_sales + total_income_manual
@@ -1303,7 +1386,155 @@ async def cashflow_summary(user=Depends(get_current_user)):
         "total_income_manual": total_income_manual,
         "total_expense": total_expense,
         "net_cashflow": total_income - total_expense,
+        "start_date": start_date,
+        "end_date": end_date,
     }
+
+
+# ---------- Bulk Import ----------
+@api.post("/import/products")
+async def import_products(body: ImportProductsIn, user=Depends(get_current_user)):
+    if not body.rows:
+        raise HTTPException(400, "Tidak ada baris untuk diimport")
+    cats = {c["name"].lower(): c for c in await db.categories.find({}, {"_id": 0}).to_list(500)}
+    sups = {s["name"].lower(): s for s in await db.suppliers.find({}, {"_id": 0}).to_list(500)}
+    created = 0
+    skipped = []
+    for idx, r in enumerate(body.rows, start=1):
+        name = (r.name or "").strip()
+        if not name:
+            skipped.append({"row": idx, "reason": "Nama produk kosong"})
+            continue
+        cat_name = (r.category_name or "").strip()
+        sup_name = (r.supplier_name or "").strip()
+        cat_id = None
+        if cat_name:
+            key = cat_name.lower()
+            if key not in cats:
+                doc = {"id": new_id(), "name": cat_name, "created_at": now_iso()}
+                await db.categories.insert_one(doc)
+                cats[key] = doc
+            cat_id = cats[key]["id"]
+        sup_id = None
+        if sup_name:
+            key = sup_name.lower()
+            if key not in sups:
+                doc = {
+                    "id": new_id(), "name": sup_name, "contact_person": "", "phone": "",
+                    "address": "", "notes": "", "status": "active", "created_at": now_iso(),
+                }
+                await db.suppliers.insert_one(doc)
+                sups[key] = doc
+            sup_id = sups[key]["id"]
+        await db.products.insert_one({
+            "id": new_id(),
+            "name": name,
+            "variant": (r.variant or "").strip(),
+            "category_id": cat_id,
+            "supplier_id": sup_id,
+            "cost_price": float(r.cost_price or 0),
+            "selling_price": float(r.selling_price or 0),
+            "stock": int(r.stock or 0),
+            "minimum_stock": int(r.minimum_stock or 5),
+            "sku": (r.sku or "").strip(),
+            "status": "active",
+            "description": (r.description or "").strip(),
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        })
+        created += 1
+    return {"ok": True, "created": created, "skipped": skipped}
+
+
+@api.post("/import/stock")
+async def import_stock(body: ImportStockIn, user=Depends(get_current_user)):
+    if not body.rows:
+        raise HTTPException(400, "Tidak ada baris untuk diimport")
+    prods = await db.products.find({}, {"_id": 0}).to_list(2000)
+    def norm(s): return (s or "").strip().lower()
+    applied = 0
+    skipped = []
+    for idx, r in enumerate(body.rows, start=1):
+        name = norm(r.product_name)
+        variant = norm(r.variant)
+        if not name:
+            skipped.append({"row": idx, "reason": "Nama produk kosong"})
+            continue
+        match = next((p for p in prods if norm(p.get("name")) == name and norm(p.get("variant")) == variant), None)
+        if not match and not variant:
+            match = next((p for p in prods if norm(p.get("name")) == name), None)
+        if not match:
+            skipped.append({"row": idx, "reason": f"Produk '{r.product_name}' tidak ditemukan"})
+            continue
+        qty = int(r.quantity or 0)
+        if qty == 0:
+            skipped.append({"row": idx, "reason": "Jumlah 0, dilewati"})
+            continue
+        new_stock = int(match.get("stock", 0)) + qty
+        if new_stock < 0:
+            skipped.append({"row": idx, "reason": "Stok akan negatif"})
+            continue
+        await db.products.update_one({"id": match["id"]}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+        await db.inventory_history.insert_one({
+            "id": new_id(),
+            "product_id": match["id"],
+            "product_name": match.get("name"),
+            "variant": match.get("variant"),
+            "type": "in" if qty > 0 else "out",
+            "quantity": qty,
+            "reason": r.reason or "Restock",
+            "notes": r.notes or "Bulk import",
+            "created_at": now_iso(),
+            "user_email": user["email"],
+        })
+        # Auto expense untuk stok sendiri
+        if qty > 0 and (r.reason or "Restock").strip().lower() == "restock" and not match.get("supplier_id"):
+            cost_price = float(match.get("cost_price", 0) or 0)
+            amount = cost_price * qty
+            if amount > 0:
+                await db.expenses.insert_one({
+                    "id": new_id(),
+                    "category": "Restock",
+                    "description": f"Restock {match.get('name')}{(' - ' + match.get('variant')) if match.get('variant') else ''} x{qty} (import)",
+                    "amount": amount,
+                    "date": now_iso(),
+                    "created_at": now_iso(),
+                    "user_email": user["email"],
+                    "auto": True,
+                    "source_product_id": match["id"],
+                })
+        # refresh cache
+        match["stock"] = new_stock
+        applied += 1
+    return {"ok": True, "applied": applied, "skipped": skipped}
+
+
+@api.post("/import/expenses")
+async def import_expenses(body: ImportExpensesIn, user=Depends(get_current_user)):
+    if not body.rows:
+        raise HTTPException(400, "Tidak ada baris untuk diimport")
+    created = 0
+    skipped = []
+    for idx, r in enumerate(body.rows, start=1):
+        cat = (r.category or "").strip()
+        if not cat:
+            skipped.append({"row": idx, "reason": "Kategori kosong"})
+            continue
+        amt = float(r.amount or 0)
+        if amt <= 0:
+            skipped.append({"row": idx, "reason": "Jumlah harus > 0"})
+            continue
+        await db.expenses.insert_one({
+            "id": new_id(),
+            "category": cat,
+            "description": (r.description or "").strip(),
+            "amount": amt,
+            "date": r.date or now_iso(),
+            "created_at": now_iso(),
+            "user_email": user["email"],
+        })
+        created += 1
+    return {"ok": True, "created": created, "skipped": skipped}
 
 
 # ---------- Seed ----------

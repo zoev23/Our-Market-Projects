@@ -8,11 +8,21 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
-import { Plus, Trash2, TrendingUp, TrendingDown, Wallet, ArrowDownWideNarrow } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, Wallet, ArrowDownWideNarrow, CalendarRange, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 const EXPENSE_CATS = ["Restock", "Packaging", "Delivery", "Electricity", "Operational", "Marketing", "Other"];
 const INCOME_CATS = ["Modal Awal", "Investasi", "Pinjaman", "Refund", "Bonus", "Lainnya"];
+
+const RANGES = {
+  today: { label: "Hari Ini", compute: () => { const s = new Date(); s.setHours(0,0,0,0); return { start: s.toISOString(), end: new Date().toISOString() }; } },
+  yesterday: { label: "Kemarin", compute: () => { const s = new Date(); s.setDate(s.getDate()-1); s.setHours(0,0,0,0); const e = new Date(s); e.setHours(23,59,59,999); return { start: s.toISOString(), end: e.toISOString() }; } },
+  week: { label: "7 Hari Terakhir", compute: () => { const s = new Date(); s.setDate(s.getDate()-7); return { start: s.toISOString(), end: new Date().toISOString() }; } },
+  month: { label: "Bulan Ini", compute: () => { const s = new Date(); s.setDate(1); s.setHours(0,0,0,0); return { start: s.toISOString(), end: new Date().toISOString() }; } },
+  last_month: { label: "Bulan Lalu", compute: () => { const now = new Date(); const s = new Date(now.getFullYear(), now.getMonth()-1, 1); const e = new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59); return { start: s.toISOString(), end: e.toISOString() }; } },
+  all: { label: "Semua Waktu", compute: () => ({}) },
+  custom: { label: "Custom", compute: () => ({}) },
+};
 
 export default function Cashflow() {
   const [summary, setSummary] = useState(null);
@@ -26,16 +36,53 @@ export default function Cashflow() {
   const [delExp, setDelExp] = useState(null);
   const [delInc, setDelInc] = useState(null);
   const [sort, setSort] = useState("date_desc");
+  const [range, setRange] = useState("month");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
+
+  const activeRange = useMemo(() => {
+    if (range === "custom") {
+      return {
+        start: customStart ? new Date(customStart).toISOString() : undefined,
+        end: customEnd ? new Date(customEnd + "T23:59:59").toISOString() : undefined,
+      };
+    }
+    return RANGES[range].compute();
+  }, [range, customStart, customEnd]);
 
   const load = () => {
-    api.get("/cashflow/summary").then((r) => setSummary(r.data));
+    const params = new URLSearchParams();
+    if (activeRange.start) params.set("start_date", activeRange.start);
+    if (activeRange.end) params.set("end_date", activeRange.end);
+    api.get(`/cashflow/summary?${params.toString()}`).then((r) => setSummary(r.data));
     api.get("/expenses").then((r) => setExpenses(r.data));
     api.get("/incomes").then((r) => setIncomes(r.data));
-    api.get("/transactions?limit=200").then((r) => setTransactions(r.data));
+    api.get("/transactions?limit=500").then((r) => setTransactions(r.data));
   };
-  useEffect(load, []);
+  useEffect(load, [activeRange.start, activeRange.end]);
 
-  const sortFn = (arr, kind) => {
+  const rangeLabel = () => {
+    if (range === "custom") {
+      if (!customStart && !customEnd) return "Semua Waktu";
+      return `${customStart ? formatDate(customStart) : "Awal"} – ${customEnd ? formatDate(customEnd) : "Sekarang"}`;
+    }
+    return RANGES[range].label;
+  };
+
+  const inRange = (isoDate) => {
+    if (!isoDate) return false;
+    const t = new Date(isoDate).getTime();
+    if (Number.isNaN(t)) return false;
+    if (activeRange.start && t < new Date(activeRange.start).getTime()) return false;
+    if (activeRange.end && t > new Date(activeRange.end).getTime()) return false;
+    return true;
+  };
+
+  const filteredIncomes = useMemo(() => incomes.filter((i) => inRange(i.date || i.created_at)), [incomes, activeRange.start, activeRange.end]);
+  const filteredExpenses = useMemo(() => expenses.filter((e) => inRange(e.date || e.created_at)), [expenses, activeRange.start, activeRange.end]);
+  const filteredSales = useMemo(() => transactions.filter((t) => inRange(t.created_at)), [transactions, activeRange.start, activeRange.end]);
+
+  const sortFn = (arr) => {
     const s = [...arr];
     switch (sort) {
       case "date_asc": s.sort((a, b) => (a.date || a.created_at || "").localeCompare(b.date || b.created_at || "")); break;
@@ -46,9 +93,9 @@ export default function Cashflow() {
     return s;
   };
 
-  const sortedIncomes = useMemo(() => sortFn(incomes, "inc"), [incomes, sort]);
-  const sortedExpenses = useMemo(() => sortFn(expenses, "exp"), [expenses, sort]);
-  const sortedSales = useMemo(() => sortFn(transactions, "sales"), [transactions, sort]);
+  const sortedIncomes = useMemo(() => sortFn(filteredIncomes), [filteredIncomes, sort]);
+  const sortedExpenses = useMemo(() => sortFn(filteredExpenses), [filteredExpenses, sort]);
+  const sortedSales = useMemo(() => sortFn(filteredSales), [filteredSales, sort]);
 
   const submitExp = async () => {
     try { await api.post("/expenses", { ...expForm, amount: Number(expForm.amount) }); toast.success("Pengeluaran ditambahkan"); setExpOpen(false); setExpForm({ category: "Restock", description: "", amount: 0 }); load(); }
@@ -63,12 +110,33 @@ export default function Cashflow() {
 
   return (
     <div className="space-y-4" data-testid="cashflow-page">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Cashflow / Arus Kas</h1>
-          <p className="text-sm text-muted-foreground mt-1">Penjualan otomatis + pemasukan/pengeluaran manual.</p>
+          <p className="text-sm text-muted-foreground mt-1">Ringkasan arus kas untuk periode <span className="font-medium text-foreground">{rangeLabel()}</span>.</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-end">
+          <div>
+            <Label className="text-xs flex items-center gap-1.5"><CalendarRange size={13} />Periode</Label>
+            <Select value={range} onValueChange={setRange}>
+              <SelectTrigger className="sm:w-48 mt-1" data-testid="cashflow-range"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(RANGES).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {range === "custom" && (
+            <>
+              <div>
+                <Label className="text-xs">Dari</Label>
+                <Input type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} data-testid="cashflow-start" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Sampai</Label>
+                <Input type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} data-testid="cashflow-end" className="mt-1" />
+              </div>
+            </>
+          )}
           <Button variant="outline" onClick={() => setIncOpen(true)} data-testid="income-add" className="text-emerald-500 border-emerald-500/40"><Plus size={16} className="mr-1.5" />Pemasukan</Button>
           <Button onClick={() => setExpOpen(true)} data-testid="expense-add"><Plus size={16} className="mr-1.5" />Pengeluaran</Button>
         </div>
@@ -99,9 +167,9 @@ export default function Cashflow() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pemasukan Manual</div>
+          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pemasukan Manual ({sortedIncomes.length})</div>
           <div className="max-h-96 overflow-y-auto">
-            {sortedIncomes.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada pemasukan manual.</div> :
+            {sortedIncomes.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada pemasukan manual di periode ini.</div> :
               sortedIncomes.map((i) => (
                 <div key={i.id} className="flex items-center justify-between px-4 py-3 border-b border-border last:border-0" data-testid={`income-row-${i.id}`}>
                   <div><div className="text-sm font-medium">{i.description || i.category}</div><div className="text-xs text-muted-foreground">{i.category} • {formatDate(i.date)}</div></div>
@@ -112,9 +180,9 @@ export default function Cashflow() {
         </div>
 
         <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pemasukan Penjualan</div>
+          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pemasukan Penjualan ({sortedSales.length})</div>
           <div className="max-h-96 overflow-y-auto">
-            {sortedSales.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada penjualan.</div> :
+            {sortedSales.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada penjualan di periode ini.</div> :
               sortedSales.map((t) => (
                 <div key={t.id} className="flex items-center justify-between px-4 py-3 border-b border-border last:border-0">
                   <div><div className="text-sm font-medium">{t.transaction_number}</div><div className="text-xs text-muted-foreground">{formatDate(t.created_at)}</div></div>
@@ -125,12 +193,18 @@ export default function Cashflow() {
         </div>
 
         <div className="bg-card border border-border rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pengeluaran</div>
+          <div className="px-4 py-3 border-b border-border font-semibold text-sm">Pengeluaran ({sortedExpenses.length})</div>
           <div className="max-h-96 overflow-y-auto">
-            {sortedExpenses.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada pengeluaran.</div> :
+            {sortedExpenses.length === 0 ? <div className="p-6 text-sm text-muted-foreground text-center">Belum ada pengeluaran di periode ini.</div> :
               sortedExpenses.map((e) => (
                 <div key={e.id} className="flex items-center justify-between px-4 py-3 border-b border-border last:border-0">
-                  <div><div className="text-sm font-medium">{e.description || e.category}</div><div className="text-xs text-muted-foreground">{e.category} • {formatDate(e.date)}</div></div>
+                  <div>
+                    <div className="text-sm font-medium flex items-center gap-1.5">
+                      {e.description || e.category}
+                      {e.auto && <span title="Otomatis dari restock stok sendiri" className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 rounded"><Zap size={10} />auto</span>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">{e.category} • {formatDate(e.date)}</div>
+                  </div>
                   <div className="flex items-center gap-2"><div className="font-mono font-semibold text-rose-500">-{formatRp(e.amount)}</div><button onClick={() => setDelExp(e.id)} className="p-1 hover:bg-destructive/10 text-destructive rounded"><Trash2 size={13} /></button></div>
                 </div>
               ))}

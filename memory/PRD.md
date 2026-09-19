@@ -2,68 +2,63 @@
 
 ## Original Problem Statement
 Web App Cashflow & POS untuk bisnis Frozen Food.
-Fitur inti: Dashboard, POS/Kasir, Product Management, Supplier Management, Inventory/Stock, Thermal Receipt, Sales Reports, Cashflow, Settings.
+Fitur inti: Dashboard, POS/Kasir, Product, Supplier, Inventory, Thermal Receipt, Sales Reports, Cashflow, Settings, Import Data.
 
 ## Product Requirements (fixed)
-- Admin login JWT tunggal (Bahasa Indonesia UI, currency Rupiah)
-- No product photo (text-based only)
-- Light default + dark mode toggle
-- Seed data supplier Frozen Food (Risoles, Cireng Gendud, Lumpia Ubee)
+- Admin login JWT (Bahasa Indonesia UI, currency Rupiah)
+- No product photo (text-based)
+- Light default + dark mode
+- Seed data Frozen Food (Risoles, Cireng Gendud, Lumpia Ubee)
 - Responsive mobile + desktop
-- Cashless only (QRIS, Transfer) — tidak ada Tunai/Debit
+- Cashless only (QRIS, Transfer)
 
 ## Architecture
 - Backend: FastAPI + MongoDB (Motor). Routes under `/api`.
 - Frontend: React + Tailwind + Shadcn UI + Axios + xlsx + jspdf + html2canvas.
-- Auth: JWT cookie + bearer header fallback.
 
 ## Implemented Features (2026-02)
 - **Auth**: JWT login, seed admin
-- **Products**:
-  - CRUD text-only
-  - Inline **+ Kategori Baru** dan **+ Supplier Baru** di dalam dropdown form Tambah Produk (sentinel Select item + mini dialog, auto-select setelah dibuat)
+- **Products**: Inline "+ Kategori Baru" & "+ Supplier Baru" di dropdown form
 - **POS/Kasir**:
-  - Tab **Titipan Supplier** vs **Stok Sendiri** (produk difilter otomatis by supplier_id)
-  - Cart: nama pembeli, tanggal opsional, per-item note
-  - **Biaya Tambahan** di keranjang: Ongkir, Packing, Biaya Goreng (default dari Settings)
-  - Payment: hanya QRIS + Transfer (Cash/Debit dihapus, tidak ada input Uang Diterima/Kembalian)
-  - Backend menolak mix supplier + own_stock
-  - Profit: `own_stock` → total; `supplier` → total - cost
-- **Inventory**: stock adjust + history
-- **Cashflow**: 3 kartu (Total Pemasukan, Total Pengeluaran, Laba Bersih)
-- **Transactions**:
-  - Edit dengan **tambah produk baru** di dialog edit, dedup check, delete + restore stock
-  - Fees inputs dalam edit (ongkir/packing/goreng)
-  - Excel export
-  - Badge source_type (Supplier / Stok Sendiri), via WA, diedit
-- **Receipt**: 80mm thermal, ongkir/packing/goreng di struk & pesan WA
-- **Dashboard**: filter periode (Today, Yesterday, 7d, MTD, Last Month, All-time, Custom)
-- **Reports**: buyer recap, supplier recap (TXT + PDF tree)
-- **WhatsApp**: Fonnte webhook + fallback wa.me
-- **Settings**: toko, footer struk, Fonnte, tema, **default biaya (Ongkir/Packing/Goreng)**
+  - Tab Titipan Supplier vs Stok Sendiri
+  - Cart fees: Ongkir, Packing, Biaya Goreng (default dari Settings)
+  - Cashless only (QRIS + Transfer)
+  - Profit: own_stock → total; supplier → total - cost
+- **Inventory**:
+  - Stock adjust + history
+  - **Auto Restock Expense**: restock produk tanpa supplier otomatis catat expense = cost_price × qty
+  - Preview banner di dialog "Sesuaikan Stok" menampilkan estimasi auto-expense
+- **Cashflow**:
+  - **Filter Periode** (Today/Yesterday/7d/Bulan Ini/Bulan Lalu/Semua/Custom) — sama seperti Dashboard
+  - 3 kartu ringkas (Total Pemasukan / Pengeluaran / Laba Bersih)
+  - Badge "auto" pada expense yang di-generate otomatis dari restock
+- **Transactions**: Edit + tambah produk baru saat edit, dedup, delete restore stok, Excel export, badge source_type
+- **Receipt**: 80mm thermal + fees + WhatsApp send
+- **Dashboard**: Filter periode
+- **Reports**: Buyer & Supplier recap
+- **WhatsApp**: Fonnte + fallback wa.me
+- **Settings**: Toko, Fonnte, tema, default fees
+- **Import Data (baru)**: Upload .xlsx bulk untuk Produk / Stok / Pengeluaran
+  - Template download per-tab
+  - Preview 20 baris pertama sebelum submit
+  - Kategori & Supplier auto-created saat import Produk
+  - Stok import auto-log expense untuk produk tanpa supplier
+  - Report hasil (created/applied + skipped rows)
 
 ## Key API Endpoints
 - `POST /api/auth/login`
 - `GET/POST/PUT/DELETE /api/products|categories|suppliers|transactions`
-- `POST /api/transactions` — payload menerima `shipping_fee`, `packing_fee`, `frying_fee`; response `source_type`
-- `PUT /api/transactions/{id}` — sekarang boleh tambah produk baru, block duplikat product_id, otomatis update stok delta
-- `GET /api/dashboard/summary?start_date=&end_date=`
+- `POST /api/inventory/adjust` — response `expense_created` ({id, amount}) jika auto-expense terpicu
+- `GET /api/cashflow/summary?start_date=&end_date=`
+- `POST /api/import/products|stock|expenses` — rows: [{...}], response {ok, created/applied, skipped}
 - `GET /api/reports/buyer-recap|supplier-recap`
 - `GET/POST/DELETE /api/expenses|incomes`
-- `GET/PUT /api/settings` — mendukung `default_shipping_fee|packing_fee|frying_fee`
+- `GET/PUT /api/settings`
 - `POST /api/whatsapp/send`, `POST /api/webhook/fonnte`
 
 ## Roadmap
-- P1 Auto-log restock ke expenses (opsional, biar Laba Bersih akurat tanpa input dua kali)
-- P1 Bulk Import Data (Products/Stock/Expenses via XLSX)
-- P2 Persist Sorting Preferences (localStorage)
+- P2 Persist sort preferences (localStorage)
 - P2 Cashflow Excel Export
 - P2 Dashboard PDF/PNG Export
-- P2 Filter Periode di Cashflow
 - P2 Widget Target Omzet Bulanan
-
-## Guardrails
-- Backend menolak keranjang campuran source_type; UI POS memberi konfirmasi saat tab switch dengan keranjang isi.
-- Data lama dengan `payment_method` "Tunai" / "Debit" tetap tampil (read-only fallback di edit dialog).
-- Semua UI Bahasa Indonesia.
-- File edits pakai `mcp_search_replace` untuk existing files.
+- P3 Undo delete auto-expense saat stock adjust dibatalkan

@@ -30,8 +30,13 @@ export default function Inventory() {
 
   const submitAdj = async () => {
     try {
-      await api.post("/inventory/adjust", { ...adjForm, quantity: Number(adjForm.quantity) });
-      toast.success("Stok berhasil diupdate"); setAdjOpen(false); load();
+      const { data } = await api.post("/inventory/adjust", { ...adjForm, quantity: Number(adjForm.quantity) });
+      if (data.expense_created) {
+        toast.success(`Stok diupdate • Expense auto Rp ${data.expense_created.amount.toLocaleString("id-ID")} tercatat`);
+      } else {
+        toast.success("Stok berhasil diupdate");
+      }
+      setAdjOpen(false); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
 
@@ -145,6 +150,15 @@ export default function Inventory() {
               </Select>
             </div>
             <div><Label>Catatan</Label><Textarea value={adjForm.notes} onChange={(e) => setAdjForm({ ...adjForm, notes: e.target.value })} /></div>
+            {adjForm.reason === "Restock" && Number(adjForm.quantity) > 0 && (() => {
+              const p = products.find((x) => x.id === adjForm.product_id);
+              if (!p) return null;
+              if (p.supplier_id) {
+                return <div className="text-[11px] text-muted-foreground bg-secondary/40 rounded p-2">Produk dari supplier — cost sudah dihitung saat penjualan. Tidak ada expense otomatis.</div>;
+              }
+              const amount = (Number(p.cost_price) || 0) * Number(adjForm.quantity);
+              return <div className="text-[11px] bg-emerald-500/10 text-emerald-700 rounded p-2">Stok sendiri — expense otomatis <strong>Rp {amount.toLocaleString("id-ID")}</strong> akan dicatat di Cashflow.</div>;
+            })()}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setAdjOpen(false)}>Batal</Button><Button onClick={submitAdj} data-testid="adj-save">Simpan</Button></DialogFooter>
         </DialogContent>
