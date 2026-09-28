@@ -334,6 +334,46 @@ async def list_products(user=Depends(get_current_user)):
     return await db.products.find({}, {"_id": 0}).sort("name", 1).to_list(2000)
 
 
+async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "Restock", notes: str = ""):
+    """Log inventory_history "in" + auto-expense untuk stok sendiri. qty MUST be positive."""
+    if qty <= 0:
+        return None
+    cost_price = float(prod.get("cost_price", 0) or 0)
+    hist_id = new_id()
+    await db.inventory_history.insert_one({
+        "id": hist_id,
+        "product_id": prod["id"],
+        "product_name": prod.get("name"),
+        "variant": prod.get("variant"),
+        "type": "in",
+        "quantity": qty,
+        "cost_at_time": cost_price,
+        "amount": cost_price * qty,
+        "reason": reason,
+        "notes": notes,
+        "created_at": now_iso(),
+        "user_email": user_email,
+    })
+    expense = None
+    if not prod.get("supplier_id") and cost_price > 0 and (reason or "").strip().lower() == "restock":
+        amount = cost_price * qty
+        expense_doc = {
+            "id": new_id(),
+            "category": "Restock",
+            "description": f"Restock {prod.get('name')}{(' - ' + prod.get('variant')) if prod.get('variant') else ''} x{qty}",
+            "amount": amount,
+            "date": now_iso(),
+            "created_at": now_iso(),
+            "user_email": user_email,
+            "auto": True,
+            "source_product_id": prod["id"],
+            "source_history_id": hist_id,
+        }
+        await db.expenses.insert_one(expense_doc)
+        expense = {"id": expense_doc["id"], "amount": amount}
+    return {"history_id": hist_id, "expense": expense}
+
+
 @api.post("/products")
 async def create_product(body: ProductIn, user=Depends(get_current_user)):
     doc = body.model_dump()
@@ -342,17 +382,45 @@ async def create_product(body: ProductIn, user=Depends(get_current_user)):
     doc["updated_at"] = now_iso()
     await db.products.insert_one(doc)
     doc.pop("_id", None)
+    initial_stock = int(doc.get("stock", 0) or 0)
+    restock_info = None
+    if initial_stock > 0:
+        restock_info = await _record_restock(doc, initial_stock, user["email"], reason="Restock", notes="Stok awal produk")
+    doc["restock_recorded"] = restock_info
     return doc
 
 
 @api.put("/products/{pid}")
 async def update_product(pid: str, body: ProductIn, user=Depends(get_current_user)):
+    old = await db.products.find_one({"id": pid})
+    if not old:
+        raise HTTPException(404, "Produk tidak ditemukan")
     upd = body.model_dump()
     upd["updated_at"] = now_iso()
-    r = await db.products.update_one({"id": pid}, {"$set": upd})
-    if r.matched_count == 0:
-        raise HTTPException(404, "Produk tidak ditemukan")
-    return await db.products.find_one({"id": pid}, {"_id": 0})
+    new_stock = int(upd.get("stock", 0) or 0)
+    old_stock = int(old.get("stock", 0) or 0)
+    delta = new_stock - old_stock
+    await db.products.update_one({"id": pid}, {"$set": upd})
+    result = await db.products.find_one({"id": pid}, {"_id": 0})
+    restock_info = None
+    if delta > 0:
+        # gunakan cost_price terbaru untuk restock
+        restock_info = await _record_restock(result, delta, user["email"], reason="Restock", notes="Update dari form Produk")
+    elif delta < 0:
+        await db.inventory_history.insert_one({
+            "id": new_id(),
+            "product_id": pid,
+            "product_name": result.get("name"),
+            "variant": result.get("variant"),
+            "type": "out",
+            "quantity": delta,
+            "reason": "Adjust",
+            "notes": "Update stok dari form Produk",
+            "created_at": now_iso(),
+            "user_email": user["email"],
+        })
+    result["restock_recorded"] = restock_info
+    return result
 
 
 @api.delete("/products/{pid}")
@@ -416,53 +484,82 @@ async def adjust_stock(body: StockAdjustIn, user=Depends(get_current_user)):
     prod = await db.products.find_one({"id": body.product_id})
     if not prod:
         raise HTTPException(404, "Produk tidak ditemukan")
-    new_stock = int(prod.get("stock", 0)) + int(body.quantity)
+    qty = int(body.quantity)
+    new_stock = int(prod.get("stock", 0)) + qty
     if new_stock < 0:
         raise HTTPException(400, "Stok tidak boleh negatif")
     await db.products.update_one({"id": body.product_id}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
-    await db.inventory_history.insert_one({
-        "id": new_id(),
-        "product_id": body.product_id,
-        "product_name": prod.get("name"),
-        "variant": prod.get("variant"),
-        "type": "in" if body.quantity > 0 else "out",
-        "quantity": body.quantity,
-        "reason": body.reason,
-        "notes": body.notes,
-        "created_at": now_iso(),
-        "user_email": user["email"],
-    })
-
-    # Auto Restock Expense: hanya untuk produk stok sendiri (tanpa supplier)
-    # Supplier products bayar saat terjual (cost sudah dipotong dari profit), jadi tidak dobel expense.
+    prod["stock"] = new_stock
     expense_created = None
-    if (
-        body.quantity > 0
-        and (body.reason or "").strip().lower() == "restock"
-        and not prod.get("supplier_id")
-    ):
-        cost_price = float(prod.get("cost_price", 0) or 0)
-        amount = cost_price * int(body.quantity)
-        if amount > 0:
-            expense_doc = {
-                "id": new_id(),
-                "category": "Restock",
-                "description": f"Restock {prod.get('name')}{(' - ' + prod.get('variant')) if prod.get('variant') else ''} x{body.quantity}",
-                "amount": amount,
-                "date": now_iso(),
-                "created_at": now_iso(),
-                "user_email": user["email"],
-                "auto": True,
-                "source_product_id": body.product_id,
-            }
-            await db.expenses.insert_one(expense_doc)
-            expense_created = {"id": expense_doc["id"], "amount": amount}
+    if qty > 0:
+        info = await _record_restock(prod, qty, user["email"], reason=body.reason or "Restock", notes=body.notes or "")
+        if info and info.get("expense"):
+            expense_created = info["expense"]
+    else:
+        await db.inventory_history.insert_one({
+            "id": new_id(),
+            "product_id": body.product_id,
+            "product_name": prod.get("name"),
+            "variant": prod.get("variant"),
+            "type": "out",
+            "quantity": qty,
+            "reason": body.reason,
+            "notes": body.notes,
+            "created_at": now_iso(),
+            "user_email": user["email"],
+        })
     return {"ok": True, "new_stock": new_stock, "expense_created": expense_created}
 
 
 @api.get("/inventory/history")
 async def inventory_history(user=Depends(get_current_user)):
     return await db.inventory_history.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+
+
+@api.get("/restocks")
+async def list_restocks(
+    user=Depends(get_current_user),
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+):
+    """Riwayat restock (inventory_history type=in) + linked auto expense info."""
+    q = {"type": "in"}
+    if start_date or end_date:
+        q["created_at"] = {}
+        if start_date:
+            q["created_at"]["$gte"] = start_date
+        if end_date:
+            q["created_at"]["$lte"] = end_date
+    entries = await db.inventory_history.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    prods = {p["id"]: p for p in await db.products.find({}, {"_id": 0}).to_list(3000)}
+    # linked expenses by source_history_id (fast lookup)
+    exp_by_hist = {}
+    async for e in db.expenses.find({"source_history_id": {"$exists": True}}, {"_id": 0}):
+        exp_by_hist[e.get("source_history_id")] = e
+    result = []
+    for h in entries:
+        prod = prods.get(h.get("product_id"), {})
+        cost = float(h.get("cost_at_time", prod.get("cost_price", 0) or 0))
+        qty = int(h.get("quantity", 0))
+        exp = exp_by_hist.get(h.get("id"))
+        result.append({
+            "id": h.get("id"),
+            "created_at": h.get("created_at"),
+            "product_id": h.get("product_id"),
+            "product_name": h.get("product_name"),
+            "variant": h.get("variant"),
+            "quantity": qty,
+            "cost_at_time": cost,
+            "amount": h.get("amount", cost * qty),
+            "reason": h.get("reason"),
+            "notes": h.get("notes"),
+            "supplier_id": prod.get("supplier_id"),
+            "source_type": "own_stock" if not prod.get("supplier_id") else "supplier",
+            "expense_id": exp.get("id") if exp else None,
+            "auto_expense_amount": exp.get("amount") if exp else 0,
+            "user_email": h.get("user_email"),
+        })
+    return {"items": result, "total": len(result), "total_amount": sum(r["amount"] for r in result)}
 
 
 # ---------- Transactions ----------

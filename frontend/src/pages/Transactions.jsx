@@ -8,7 +8,7 @@ import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
-import { Receipt as ReceiptIcon, Eye, Search, Pencil, Plus, Minus, Trash2, FileSpreadsheet, ArrowDownWideNarrow } from "lucide-react";
+import { Receipt as ReceiptIcon, Eye, Search, Pencil, Plus, Minus, Trash2, FileSpreadsheet, ArrowDownWideNarrow, ShoppingBag, PackagePlus, Zap } from "lucide-react";
 import Receipt from "../components/Receipt";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "../components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -16,17 +16,22 @@ import { toast } from "sonner";
 export default function Transactions() {
   const [items, setItems] = useState([]);
   const [products, setProducts] = useState([]);
+  const [restocks, setRestocks] = useState([]);
   const [addProductId, setAddProductId] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [settings, setSettings] = useState(null);
-  const [editing, setEditing] = useState(null); // form state
+  const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingTxn, setDeletingTxn] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [sort, setSort] = useState("date_desc");
+  const [tab, setTab] = useState("sales"); // sales | restock
 
-  const load = () => api.get("/transactions").then((r) => setItems(r.data));
+  const load = () => {
+    api.get("/transactions").then((r) => setItems(r.data));
+    api.get("/restocks").then((r) => setRestocks(r.data.items || []));
+  };
   useEffect(() => {
     load();
     api.get("/settings").then((r) => setSettings(r.data));
@@ -34,6 +39,25 @@ export default function Transactions() {
   }, []);
 
   const filtered = items.filter((t) => !search || `${t.transaction_number} ${t.customer_name || ""}`.toLowerCase().includes(search.toLowerCase()));
+
+  const filteredRestocks = useMemo(() => restocks.filter((r) => !search || `${r.product_name} ${r.variant || ""} ${r.reason || ""}`.toLowerCase().includes(search.toLowerCase())), [restocks, search]);
+
+  const sortedRestocks = useMemo(() => {
+    const s = [...filteredRestocks];
+    switch (sort) {
+      case "date_asc": s.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || "")); break;
+      case "total_desc": s.sort((a, b) => (b.amount || 0) - (a.amount || 0)); break;
+      case "total_asc": s.sort((a, b) => (a.amount || 0) - (b.amount || 0)); break;
+      default: s.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    }
+    return s;
+  }, [filteredRestocks, sort]);
+
+  const restockTotals = useMemo(() => ({
+    count: filteredRestocks.length,
+    amount: filteredRestocks.reduce((s, r) => s + (r.amount || 0), 0),
+    auto: filteredRestocks.filter((r) => r.auto_expense_amount > 0).length,
+  }), [filteredRestocks]);
 
   const sorted = useMemo(() => {
     const s = [...filtered];
@@ -196,16 +220,27 @@ export default function Transactions() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Riwayat Transaksi</h1>
-            <p className="text-sm text-muted-foreground mt-1">Semua transaksi penjualan. Klik ikon pensil untuk mengedit detail.</p>
+            <p className="text-sm text-muted-foreground mt-1">Semua transaksi penjualan & restock. Klik ikon pensil untuk mengedit penjualan.</p>
           </div>
           <Button variant="outline" onClick={exportExcel} data-testid="txn-export-excel"><FileSpreadsheet size={16} className="mr-1.5" />Export Excel</Button>
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-border">
+        <button onClick={() => setTab("sales")} data-testid="txn-tab-sales"
+          className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${tab === "sales" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+          <ShoppingBag size={14} />Penjualan ({items.length})
+        </button>
+        <button onClick={() => setTab("restock")} data-testid="txn-tab-restock"
+          className={`px-4 py-2 text-sm font-medium border-b-2 flex items-center gap-1.5 ${tab === "restock" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+          <PackagePlus size={14} />Restock ({restocks.length})
+        </button>
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari no. transaksi atau pelanggan..." className="pl-9" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={tab === "sales" ? "Cari no. transaksi atau pelanggan..." : "Cari produk atau alasan..."} className="pl-9" />
         </div>
         <div className="flex items-center gap-2">
           <ArrowDownWideNarrow size={14} className="text-muted-foreground" />
@@ -216,13 +251,65 @@ export default function Transactions() {
               <SelectItem value="date_asc">Tanggal (terlama)</SelectItem>
               <SelectItem value="total_desc">Total (terbesar)</SelectItem>
               <SelectItem value="total_asc">Total (terkecil)</SelectItem>
-              <SelectItem value="customer">Pelanggan A-Z</SelectItem>
+              {tab === "sales" && <SelectItem value="customer">Pelanggan A-Z</SelectItem>}
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      {sorted.length === 0 ? (
+      {tab === "restock" ? (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-card border border-border rounded-lg p-3"><div className="text-xs text-muted-foreground">Total Restock</div><div className="text-lg font-mono font-bold">{restockTotals.count}</div></div>
+            <div className="bg-card border border-border rounded-lg p-3"><div className="text-xs text-muted-foreground">Nilai Restock</div><div className="text-lg font-mono font-bold text-rose-500">{formatRp(restockTotals.amount)}</div></div>
+            <div className="bg-card border border-border rounded-lg p-3"><div className="text-xs text-muted-foreground">Auto Expense</div><div className="text-lg font-mono font-bold text-amber-500">{restockTotals.auto}</div></div>
+          </div>
+          {sortedRestocks.length === 0 ? (
+            <div className="text-center py-16 bg-card border border-border rounded-xl">
+              <PackagePlus size={40} className="mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground">Belum ada riwayat restock.</p>
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-xl overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/50">
+                  <tr className="text-left">
+                    <th className="px-4 py-3 font-medium">Tanggal</th>
+                    <th className="px-4 py-3 font-medium">Produk</th>
+                    <th className="px-4 py-3 font-medium">Jumlah</th>
+                    <th className="px-4 py-3 font-medium">Modal/Unit</th>
+                    <th className="px-4 py-3 font-medium">Nilai</th>
+                    <th className="px-4 py-3 font-medium">Sumber</th>
+                    <th className="px-4 py-3 font-medium">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRestocks.map((r) => (
+                    <tr key={r.id} className="border-t border-border" data-testid={`restock-row-${r.id}`}>
+                      <td className="px-4 py-3 text-xs">{formatDateTime(r.created_at)}</td>
+                      <td className="px-4 py-3"><div className="font-medium">{r.product_name}</div><div className="text-xs text-muted-foreground">{r.variant}</div></td>
+                      <td className="px-4 py-3 font-mono font-semibold text-emerald-500">+{r.quantity}</td>
+                      <td className="px-4 py-3 font-mono">{formatRp(r.cost_at_time)}</td>
+                      <td className="px-4 py-3 font-mono font-semibold text-rose-500">-{formatRp(r.amount)}</td>
+                      <td className="px-4 py-3">
+                        {r.source_type === "own_stock" ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600">Stok Sendiri</span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-600">Supplier</span>
+                        )}
+                        {r.auto_expense_amount > 0 && (
+                          <div className="text-[9px] mt-1 inline-flex items-center gap-0.5 text-amber-600"><Zap size={9} />auto expense</div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground">{r.notes || r.reason || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      ) : sorted.length === 0 ? (
         <div className="text-center py-16 bg-card border border-border rounded-xl">
           <ReceiptIcon size={40} className="mx-auto text-muted-foreground mb-3" />
           <p className="text-muted-foreground">Belum ada transaksi.</p>

@@ -61,9 +61,15 @@ export default function Products() {
   const submit = async () => {
     try {
       const payload = { ...form, cost_price: Number(form.cost_price), selling_price: Number(form.selling_price), stock: Number(form.stock), minimum_stock: Number(form.minimum_stock) };
-      if (editing) await api.put(`/products/${editing.id}`, payload);
-      else await api.post("/products", payload);
-      toast.success(editing ? "Produk diupdate" : "Produk ditambahkan");
+      let res;
+      if (editing) res = await api.put(`/products/${editing.id}`, payload);
+      else res = await api.post("/products", payload);
+      const info = res.data?.restock_recorded;
+      if (info && info.expense) {
+        toast.success(`Produk disimpan • Auto expense Rp ${info.expense.amount.toLocaleString("id-ID")} tercatat`);
+      } else {
+        toast.success(editing ? "Produk diupdate" : "Produk ditambahkan");
+      }
       setOpen(false); load();
     } catch (e) { toast.error(formatErr(e.response?.data?.detail)); }
   };
@@ -220,6 +226,26 @@ export default function Products() {
             <div><Label>Harga Jual</Label><Input type="number" value={form.selling_price} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} data-testid="product-form-price" /></div>
             <div><Label>Stok</Label><Input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} /></div>
             <div><Label>Stok Minimum</Label><Input type="number" value={form.minimum_stock} onChange={(e) => setForm({ ...form, minimum_stock: e.target.value })} /></div>
+            {(() => {
+              const oldStock = editing ? Number(editing.stock || 0) : 0;
+              const delta = Number(form.stock || 0) - oldStock;
+              if (delta <= 0) return null;
+              const hasSupplier = !!form.supplier_id;
+              const cost = Number(form.cost_price || 0);
+              const amount = cost * delta;
+              return (
+                <div className="col-span-2 rounded-lg p-2.5 text-[11px] bg-secondary/40 border border-border">
+                  <div>Delta stok: <strong className="text-emerald-500">+{delta}</strong></div>
+                  {hasSupplier ? (
+                    <div className="text-muted-foreground mt-1">Produk supplier — cost dihitung saat penjualan, tidak ada auto expense.</div>
+                  ) : cost > 0 ? (
+                    <div className="text-emerald-600 mt-1">Auto expense di Cashflow: <strong>Rp {amount.toLocaleString("id-ID")}</strong></div>
+                  ) : (
+                    <div className="text-muted-foreground mt-1">Set Harga Modal &gt; 0 untuk auto expense.</div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="col-span-2"><Label>SKU</Label><Input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} /></div>
             <div className="col-span-2"><Label>Deskripsi</Label><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
             <div className="col-span-2 bg-emerald-500/10 rounded-lg p-3 text-xs">
