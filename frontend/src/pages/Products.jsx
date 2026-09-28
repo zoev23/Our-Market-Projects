@@ -55,12 +55,22 @@ export default function Products() {
     return s;
   }, [items, catFilter, search, sort]);
 
-  const openAdd = () => { setEditing(null); setForm(empty); setOpen(true); };
-  const openEdit = (p) => { setEditing(p); setForm({ ...empty, ...p }); setOpen(true); };
+  const openAdd = () => { setEditing(null); setForm({ ...empty, __create_expense: true }); setOpen(true); };
+  const openEdit = (p) => { setEditing(p); setForm({ ...empty, ...p, __create_expense: !p.supplier_id }); setOpen(true); };
 
   const submit = async () => {
     try {
-      const payload = { ...form, cost_price: Number(form.cost_price), selling_price: Number(form.selling_price), stock: Number(form.stock), minimum_stock: Number(form.minimum_stock) };
+      const oldStock = editing ? Number(editing.stock || 0) : 0;
+      const delta = Number(form.stock || 0) - oldStock;
+      const payload = {
+        ...form,
+        cost_price: Number(form.cost_price),
+        selling_price: Number(form.selling_price),
+        stock: Number(form.stock),
+        minimum_stock: Number(form.minimum_stock),
+        create_restock_expense: delta > 0 ? !!form.__create_expense : null,
+      };
+      delete payload.__create_expense;
       let res;
       if (editing) res = await api.put(`/products/${editing.id}`, payload);
       else res = await api.post("/products", payload);
@@ -234,14 +244,22 @@ export default function Products() {
               const cost = Number(form.cost_price || 0);
               const amount = cost * delta;
               return (
-                <div className="col-span-2 rounded-lg p-2.5 text-[11px] bg-secondary/40 border border-border">
-                  <div>Delta stok: <strong className="text-emerald-500">+{delta}</strong></div>
+                <div className="col-span-2 rounded-lg p-2.5 text-[11px] bg-secondary/40 border border-border space-y-2">
+                  <div>Delta stok: <strong className="text-emerald-500">+{delta}</strong> • Estimasi biaya: <strong>Rp {amount.toLocaleString("id-ID")}</strong></div>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!form.__create_expense}
+                      onChange={(e) => setForm({ ...form, __create_expense: e.target.checked })}
+                      className="rounded"
+                      data-testid="product-form-create-expense"
+                    />
+                    <span>Catat sebagai pengeluaran otomatis di Cashflow</span>
+                  </label>
                   {hasSupplier ? (
-                    <div className="text-muted-foreground mt-1">Produk supplier — cost dihitung saat penjualan, tidak ada auto expense.</div>
-                  ) : cost > 0 ? (
-                    <div className="text-emerald-600 mt-1">Auto expense di Cashflow: <strong>Rp {amount.toLocaleString("id-ID")}</strong></div>
+                    <div className="text-muted-foreground text-[10px]">Produk supplier — default OFF karena cost sudah dikurangi saat penjualan. Aktifkan hanya kalau Anda bayar supplier saat restock (bukan konsinyasi).</div>
                   ) : (
-                    <div className="text-muted-foreground mt-1">Set Harga Modal &gt; 0 untuk auto expense.</div>
+                    <div className="text-emerald-600 text-[10px]">Produk stok sendiri — direkomendasikan ON.</div>
                   )}
                 </div>
               );

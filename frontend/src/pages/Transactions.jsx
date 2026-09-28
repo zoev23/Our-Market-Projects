@@ -27,6 +27,8 @@ export default function Transactions() {
   const [deleting, setDeleting] = useState(false);
   const [sort, setSort] = useState("date_desc");
   const [tab, setTab] = useState("sales"); // sales | restock
+  const [editingRestock, setEditingRestock] = useState(null);
+  const [deletingRestock, setDeletingRestock] = useState(null);
 
   const load = () => {
     api.get("/transactions").then((r) => setItems(r.data));
@@ -214,6 +216,41 @@ export default function Transactions() {
     } finally { setDeleting(false); }
   };
 
+  const openEditRestock = (r) => {
+    setEditingRestock({
+      id: r.id,
+      product_name: r.product_name,
+      variant: r.variant,
+      quantity: r.quantity,
+      cost_at_time: r.cost_at_time,
+      notes: r.notes || "",
+      source_type: r.source_type,
+      hasExpense: r.auto_expense_amount > 0,
+      create_expense: r.auto_expense_amount > 0,
+    });
+  };
+  const saveRestock = async () => {
+    if (!editingRestock) return;
+    try {
+      const { data } = await api.put(`/restocks/${editingRestock.id}`, {
+        quantity: Number(editingRestock.quantity),
+        cost_at_time: Number(editingRestock.cost_at_time),
+        notes: editingRestock.notes,
+        create_expense: !!editingRestock.create_expense,
+      });
+      toast.success(`Restock diupdate • Nilai Rp ${(data.amount || 0).toLocaleString("id-ID")}`);
+      setEditingRestock(null); load();
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail) || "Gagal update restock"); }
+  };
+  const doDeleteRestock = async () => {
+    if (!deletingRestock) return;
+    try {
+      await api.delete(`/restocks/${deletingRestock.id}`);
+      toast.success("Restock dihapus, stok dikurangi, expense terkait terhapus");
+      setDeletingRestock(null); load();
+    } catch (e) { toast.error(formatErr(e.response?.data?.detail) || "Gagal hapus"); }
+  };
+
   return (
     <div className="space-y-4" data-testid="transactions-page">
       <div>
@@ -281,6 +318,7 @@ export default function Transactions() {
                     <th className="px-4 py-3 font-medium">Nilai</th>
                     <th className="px-4 py-3 font-medium">Sumber</th>
                     <th className="px-4 py-3 font-medium">Catatan</th>
+                    <th className="px-4 py-3 font-medium text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,6 +340,12 @@ export default function Transactions() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground">{r.notes || r.reason || "-"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => openEditRestock(r)} className="p-1.5 hover:bg-secondary rounded text-primary" data-testid={`restock-edit-${r.id}`} title="Edit restock"><Pencil size={14} /></button>
+                          <button onClick={() => setDeletingRestock(r)} className="p-1.5 hover:bg-destructive/10 rounded text-destructive" data-testid={`restock-delete-${r.id}`} title="Hapus restock"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -491,6 +535,65 @@ export default function Transactions() {
             <AlertDialogAction onClick={doDelete} disabled={deleting} data-testid="delete-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {deleting ? "Menghapus..." : "Ya, Hapus"}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit restock dialog */}
+      <Dialog open={!!editingRestock} onOpenChange={(v) => !v && setEditingRestock(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Edit Restock</DialogTitle></DialogHeader>
+          {editingRestock && (
+            <div className="space-y-3">
+              <div className="text-sm bg-secondary/40 rounded-lg p-3">
+                <div className="font-medium">{editingRestock.product_name}</div>
+                <div className="text-xs text-muted-foreground">{editingRestock.variant}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs">Jumlah</Label>
+                  <Input type="number" value={editingRestock.quantity} onChange={(e) => setEditingRestock({ ...editingRestock, quantity: e.target.value })} data-testid="restock-edit-qty" />
+                </div>
+                <div>
+                  <Label className="text-xs">Modal/Unit</Label>
+                  <Input type="number" value={editingRestock.cost_at_time} onChange={(e) => setEditingRestock({ ...editingRestock, cost_at_time: e.target.value })} data-testid="restock-edit-cost" />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Catatan</Label>
+                <Textarea value={editingRestock.notes} onChange={(e) => setEditingRestock({ ...editingRestock, notes: e.target.value })} rows={2} />
+              </div>
+              <div className="bg-secondary/40 rounded-lg p-3 text-xs space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Nilai</span>
+                  <span className="font-mono font-semibold">{formatRp((Number(editingRestock.quantity) || 0) * (Number(editingRestock.cost_at_time) || 0))}</span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!editingRestock.create_expense} onChange={(e) => setEditingRestock({ ...editingRestock, create_expense: e.target.checked })} data-testid="restock-edit-create-expense" />
+                  <span>Catat sebagai pengeluaran otomatis di Cashflow</span>
+                </label>
+                <div className="text-[10px] text-muted-foreground">Uncheck untuk hapus expense terkait. Stok produk akan menyesuaikan otomatis dengan delta jumlah.</div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingRestock(null)}>Batal</Button>
+            <Button onClick={saveRestock} data-testid="restock-edit-save">Simpan</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deletingRestock} onOpenChange={(v) => !v && setDeletingRestock(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus restock ini?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Stok produk <strong>{deletingRestock?.product_name}</strong> akan dikurangi {deletingRestock?.quantity}. Expense terkait (Rp {(deletingRestock?.auto_expense_amount || 0).toLocaleString("id-ID")}) juga akan dihapus. Tindakan tidak dapat dibatalkan.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction onClick={doDeleteRestock} data-testid="restock-delete-confirm" className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Ya, Hapus</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

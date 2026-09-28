@@ -112,6 +112,7 @@ class ProductIn(BaseModel):
     sku: Optional[str] = ""
     status: Optional[str] = "active"
     description: Optional[str] = ""
+    create_restock_expense: Optional[bool] = None  # None = auto (own_stock=yes, supplier=no)
 
 
 class SupplierPriceIn(BaseModel):
@@ -176,6 +177,14 @@ class StockAdjustIn(BaseModel):
     quantity: int  # positive add, negative subtract
     reason: str
     notes: Optional[str] = ""
+    create_expense: Optional[bool] = None  # None = auto (own_stock=yes, supplier=no)
+
+
+class RestockUpdateIn(BaseModel):
+    quantity: int
+    cost_at_time: Optional[float] = None
+    notes: Optional[str] = ""
+    create_expense: Optional[bool] = None
 
 
 class ExpenseIn(BaseModel):
@@ -334,8 +343,8 @@ async def list_products(user=Depends(get_current_user)):
     return await db.products.find({}, {"_id": 0}).sort("name", 1).to_list(2000)
 
 
-async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "Restock", notes: str = ""):
-    """Log inventory_history "in" + auto-expense untuk stok sendiri. qty MUST be positive."""
+async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "Restock", notes: str = "", force_expense: Optional[bool] = None):
+    """Log inventory_history "in" + auto-expense. force_expense: True/False override, None auto."""
     if qty <= 0:
         return None
     cost_price = float(prod.get("cost_price", 0) or 0)
@@ -355,7 +364,9 @@ async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "
         "user_email": user_email,
     })
     expense = None
-    if not prod.get("supplier_id") and cost_price > 0 and (reason or "").strip().lower() == "restock":
+    default_should = not prod.get("supplier_id") and (reason or "").strip().lower() == "restock"
+    should_create = default_should if force_expense is None else bool(force_expense)
+    if should_create and cost_price > 0:
         amount = cost_price * qty
         expense_doc = {
             "id": new_id(),
@@ -377,6 +388,7 @@ async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "
 @api.post("/products")
 async def create_product(body: ProductIn, user=Depends(get_current_user)):
     doc = body.model_dump()
+    force_flag = doc.pop("create_restock_expense", None)
     doc["id"] = new_id()
     doc["created_at"] = now_iso()
     doc["updated_at"] = now_iso()
@@ -385,7 +397,7 @@ async def create_product(body: ProductIn, user=Depends(get_current_user)):
     initial_stock = int(doc.get("stock", 0) or 0)
     restock_info = None
     if initial_stock > 0:
-        restock_info = await _record_restock(doc, initial_stock, user["email"], reason="Restock", notes="Stok awal produk")
+        restock_info = await _record_restock(doc, initial_stock, user["email"], reason="Restock", notes="Stok awal produk", force_expense=force_flag)
     doc["restock_recorded"] = restock_info
     return doc
 
@@ -396,6 +408,7 @@ async def update_product(pid: str, body: ProductIn, user=Depends(get_current_use
     if not old:
         raise HTTPException(404, "Produk tidak ditemukan")
     upd = body.model_dump()
+    force_flag = upd.pop("create_restock_expense", None)
     upd["updated_at"] = now_iso()
     new_stock = int(upd.get("stock", 0) or 0)
     old_stock = int(old.get("stock", 0) or 0)
@@ -405,7 +418,7 @@ async def update_product(pid: str, body: ProductIn, user=Depends(get_current_use
     restock_info = None
     if delta > 0:
         # gunakan cost_price terbaru untuk restock
-        restock_info = await _record_restock(result, delta, user["email"], reason="Restock", notes="Update dari form Produk")
+        restock_info = await _record_restock(result, delta, user["email"], reason="Restock", notes="Update dari form Produk", force_expense=force_flag)
     elif delta < 0:
         await db.inventory_history.insert_one({
             "id": new_id(),
@@ -492,7 +505,7 @@ async def adjust_stock(body: StockAdjustIn, user=Depends(get_current_user)):
     prod["stock"] = new_stock
     expense_created = None
     if qty > 0:
-        info = await _record_restock(prod, qty, user["email"], reason=body.reason or "Restock", notes=body.notes or "")
+        info = await _record_restock(prod, qty, user["email"], reason=body.reason or "Restock", notes=body.notes or "", force_expense=body.create_expense)
         if info and info.get("expense"):
             expense_created = info["expense"]
     else:
@@ -1486,6 +1499,80 @@ async def cashflow_summary(
         "start_date": start_date,
         "end_date": end_date,
     }
+
+
+@api.put("/restocks/{hid}")
+async def update_restock(hid: str, body: RestockUpdateIn, user=Depends(get_current_user)):
+    hist = await db.inventory_history.find_one({"id": hid})
+    if not hist or hist.get("type") != "in":
+        raise HTTPException(404, "Restock tidak ditemukan")
+    prod = await db.products.find_one({"id": hist.get("product_id")})
+    if not prod:
+        raise HTTPException(404, "Produk terkait tidak ditemukan")
+    old_qty = int(hist.get("quantity", 0))
+    new_qty = int(body.quantity)
+    if new_qty <= 0:
+        raise HTTPException(400, "Jumlah restock harus > 0. Untuk hapus, gunakan DELETE.")
+    delta = new_qty - old_qty
+    new_product_stock = int(prod.get("stock", 0)) + delta
+    if new_product_stock < 0:
+        raise HTTPException(400, "Stok akan negatif setelah edit")
+    await db.products.update_one({"id": prod["id"]}, {"$set": {"stock": new_product_stock, "updated_at": now_iso()}})
+    cost = float(body.cost_at_time if body.cost_at_time is not None else hist.get("cost_at_time", prod.get("cost_price", 0)))
+    new_amount = cost * new_qty
+    await db.inventory_history.update_one({"id": hid}, {"$set": {
+        "quantity": new_qty,
+        "cost_at_time": cost,
+        "amount": new_amount,
+        "notes": body.notes if body.notes is not None else hist.get("notes"),
+        "updated_at": now_iso(),
+        "edited_by": user["email"],
+    }})
+    # Update / create / delete linked expense
+    linked = await db.expenses.find_one({"source_history_id": hid})
+    default_should = not prod.get("supplier_id") and (hist.get("reason") or "Restock").strip().lower() == "restock"
+    should_create = default_should if body.create_expense is None else bool(body.create_expense)
+    if linked:
+        if should_create and new_amount > 0:
+            await db.expenses.update_one({"id": linked["id"]}, {"$set": {
+                "amount": new_amount,
+                "description": f"Restock {prod.get('name')}{(' - ' + prod.get('variant')) if prod.get('variant') else ''} x{new_qty}",
+                "updated_at": now_iso(),
+            }})
+        else:
+            await db.expenses.delete_one({"id": linked["id"]})
+    else:
+        if should_create and new_amount > 0:
+            await db.expenses.insert_one({
+                "id": new_id(),
+                "category": "Restock",
+                "description": f"Restock {prod.get('name')}{(' - ' + prod.get('variant')) if prod.get('variant') else ''} x{new_qty}",
+                "amount": new_amount,
+                "date": hist.get("created_at") or now_iso(),
+                "created_at": now_iso(),
+                "user_email": user["email"],
+                "auto": True,
+                "source_product_id": prod["id"],
+                "source_history_id": hid,
+            })
+    return {"ok": True, "new_stock": new_product_stock, "amount": new_amount}
+
+
+@api.delete("/restocks/{hid}")
+async def delete_restock(hid: str, user=Depends(get_current_user)):
+    hist = await db.inventory_history.find_one({"id": hid})
+    if not hist or hist.get("type") != "in":
+        raise HTTPException(404, "Restock tidak ditemukan")
+    prod = await db.products.find_one({"id": hist.get("product_id")})
+    qty = int(hist.get("quantity", 0))
+    if prod:
+        new_stock = int(prod.get("stock", 0)) - qty
+        if new_stock < 0:
+            raise HTTPException(400, "Stok saat ini tidak cukup untuk menghapus restock ini")
+        await db.products.update_one({"id": prod["id"]}, {"$set": {"stock": new_stock, "updated_at": now_iso()}})
+    await db.expenses.delete_many({"source_history_id": hid})
+    await db.inventory_history.delete_one({"id": hid})
+    return {"ok": True}
 
 
 # ---------- Bulk Import ----------
