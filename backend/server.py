@@ -364,7 +364,10 @@ async def _record_restock(prod: dict, qty: int, user_email: str, reason: str = "
         "user_email": user_email,
     })
     expense = None
-    default_should = not prod.get("supplier_id") and (reason or "").strip().lower() == "restock"
+    # Default: SELALU buat expense saat restock (regardless of supplier).
+    # User membayar supplier di depan (bukan konsinyasi), jadi restock = uang keluar.
+    # Untuk kasus konsinyasi murni, user bisa uncheck di form.
+    default_should = (reason or "").strip().lower() == "restock"
     should_create = default_should if force_expense is None else bool(force_expense)
     if should_create and cost_price > 0:
         amount = cost_price * qty
@@ -623,11 +626,9 @@ async def create_transaction(body: TransactionIn, user=Depends(get_current_user)
     frying_fee = float(body.frying_fee or 0)
     fees_total = shipping_fee + packing_fee + frying_fee
     total_amount = max(subtotal + fees_total - discount, 0)
-    # For own_stock, cost already expensed at restock — don't double-subtract.
-    if source_type == "own_stock":
-        profit = total_amount
-    else:
-        profit = total_amount - total_cost
+    # Profit calc: cost sudah tercatat sebagai expense saat restock (baik supplier maupun own_stock),
+    # jadi profit POS = revenue penuh (total_amount) — bukan revenue - cost (menghindari double-charge).
+    profit = total_amount
     cash_received = float(body.cash_received or total_amount)
     change_amount = max(cash_received - total_amount, 0)
 
@@ -873,10 +874,8 @@ async def update_transaction(tid: str, body: TransactionUpdate, user=Depends(get
     fees_total = shipping_fee + packing_fee + frying_fee
     total_amount = max(subtotal + fees_total - discount, 0)
     source_type = old.get("source_type") or ("supplier" if has_supplier else "own_stock")
-    if source_type == "own_stock":
-        profit = total_amount
-    else:
-        profit = total_amount - total_cost
+    # Cost sudah tercatat sebagai expense saat restock, jadi profit = revenue penuh.
+    profit = total_amount
     cash_received = float(body.cash_received or total_amount)
     change_amount = max(cash_received - total_amount, 0)
 

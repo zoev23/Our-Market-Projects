@@ -56,7 +56,7 @@ export default function Products() {
   }, [items, catFilter, search, sort]);
 
   const openAdd = () => { setEditing(null); setForm({ ...empty, __create_expense: true }); setOpen(true); };
-  const openEdit = (p) => { setEditing(p); setForm({ ...empty, ...p, __create_expense: !p.supplier_id }); setOpen(true); };
+  const openEdit = (p) => { setEditing(p); setForm({ ...empty, ...p, __create_expense: true }); setOpen(true); };
 
   const submit = async () => {
     try {
@@ -257,7 +257,7 @@ export default function Products() {
                     <span>Catat sebagai pengeluaran otomatis di Cashflow</span>
                   </label>
                   {hasSupplier ? (
-                    <div className="text-muted-foreground text-[10px]">Produk supplier — default OFF karena cost sudah dikurangi saat penjualan. Aktifkan hanya kalau Anda bayar supplier saat restock (bukan konsinyasi).</div>
+                    <div className="text-emerald-600 text-[10px]">Produk supplier — expense akan tercatat di Cashflow (asumsi Anda bayar supplier saat restock, bukan konsinyasi). Uncheck jika konsinyasi.</div>
                   ) : (
                     <div className="text-emerald-600 text-[10px]">Produk stok sendiri — direkomendasikan ON.</div>
                   )}

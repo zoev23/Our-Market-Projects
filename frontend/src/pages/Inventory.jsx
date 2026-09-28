@@ -153,11 +153,8 @@ export default function Inventory() {
             {adjForm.reason === "Restock" && Number(adjForm.quantity) > 0 && (() => {
               const p = products.find((x) => x.id === adjForm.product_id);
               if (!p) return null;
-              if (p.supplier_id) {
-                return <div className="text-[11px] text-muted-foreground bg-secondary/40 rounded p-2">Produk dari supplier — cost sudah dihitung saat penjualan. Tidak ada expense otomatis.</div>;
-              }
               const amount = (Number(p.cost_price) || 0) * Number(adjForm.quantity);
-              return <div className="text-[11px] bg-emerald-500/10 text-emerald-700 rounded p-2">Stok sendiri — expense otomatis <strong>Rp {amount.toLocaleString("id-ID")}</strong> akan dicatat di Cashflow.</div>;
+              return <div className="text-[11px] bg-emerald-500/10 text-emerald-700 rounded p-2">Auto expense di Cashflow: <strong>Rp {amount.toLocaleString("id-ID")}</strong>{p.supplier_id ? " — bisa di-uncheck saat edit restock kalau konsinyasi" : ""}.</div>;
             })()}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setAdjOpen(false)}>Batal</Button><Button onClick={submitAdj} data-testid="adj-save">Simpan</Button></DialogFooter>
